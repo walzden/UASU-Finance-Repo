@@ -1,0 +1,122 @@
+@page
+@model UASU_VoucherApprovals.Pages.Reports.BalanceSheetModel
+
+<style>
+    @@media print {
+        @@page { size: A4 portrait; margin: 10mm; }
+        table { font-size: 12px; }
+    }
+</style>
+
+<h3 class="mb-1 d-print-none">Balance Sheet</h3>
+<p class="text-muted d-print-none">Statement of Financial Position as at a chosen month-end - Cash and Bank come straight from the same figures used for Monthly Certification, and Accounts Payable from Debt Status, so this can't drift from either.</p>
+
+<form method="get" class="row g-2 align-items-end mb-3 d-print-none">
+    <div class="col-auto">
+        <label class="form-label mb-0">Year</label>
+        <input name="year" type="number" value="@Model.SelectedYear" class="form-control" style="width:110px;" />
+    </div>
+    <div class="col-auto">
+        <label class="form-label mb-0">Month</label>
+        <select name="month" class="form-select">
+            @for (var m = 1; m <= 12; m++)
+            {
+                <option value="@m" selected="@(Model.SelectedMonth == m)">@System.Globalization.CultureInfo.InvariantCulture.DateTimeFormat.GetMonthName(m)</option>
+            }
+        </select>
+    </div>
+    <div class="col-auto">
+        <button type="submit" class="btn btn-outline-secondary">Go</button>
+    </div>
+</form>
+
+<div class="mb-3 d-print-none">
+    <button type="button" class="btn btn-primary" onclick="window.print()">Print / Save as PDF</button>
+</div>
+
+<div class="border p-4" style="max-width:640px;">
+    <div class="text-center mb-3">
+        <img src="~/images/uasu-Logo.jpg" alt="UASU logo" style="height:60px;"
+             onerror="this.onerror=null; this.src='/images/uasu-logo-placeholder.svg';" />
+        <h4 class="fw-bold mb-0">UNIVERSITIES' ACADEMIC STAFF UNION</h4>
+        <h5 class="mb-0">MULTIMEDIA UNIVERSITY CHAPTER</h5>
+        <div class="text-muted">Balance Sheet as at @Model.Data.AsOfDate.ToString("dd MMMM yyyy")</div>
+    </div>
+
+    <table class="table table-bordered table-sm mb-0">
+        <tbody>
+            <tr class="table-light fw-bold"><td colspan="2">ASSETS</td></tr>
+            <tr>
+                <td>Cash in Hand</td>
+                <td class="text-end">@Model.Data.CashInHand.ToString("N2")</td>
+            </tr>
+            <tr>
+                <td>Bank Balance</td>
+                <td class="text-end">@Model.Data.BankBalance.ToString("N2")</td>
+            </tr>
+            <tr class="fw-bold">
+                <td>TOTAL ASSETS</td>
+                <td class="text-end">@Model.Data.TotalAssets.ToString("N2")</td>
+            </tr>
+
+            <tr class="table-light fw-bold"><td colspan="2">LIABILITIES</td></tr>
+            <tr>
+                <td>Accounts Payable (owed to Officials/Suppliers)</td>
+                <td class="text-end">@Model.Data.AccountsPayable.ToString("N2")</td>
+            </tr>
+            <tr class="fw-bold">
+                <td>TOTAL LIABILITIES</td>
+                <td class="text-end">@Model.Data.TotalLiabilities.ToString("N2")</td>
+            </tr>
+
+            <tr class="table-info fw-bold">
+                <td>NET ASSETS (Accumulated Fund)</td>
+                <td class="text-end">@Model.Data.NetAssets.ToString("N2")</td>
+            </tr>
+        </tbody>
+    </table>
+</div>
+
+<div class="border p-4 mt-4" style="max-width:900px;">
+    <h5 class="mb-1">Income &amp; Expenditure by Budget Code - @Model.SelectedYear</h5>
+    <p class="text-muted small">Supporting detail for the year, not the Balance Sheet's cumulative-to-date position above - a category's Income/Expense here is just that year's movement, so this total won't match Net Assets.</p>
+
+    @if (!Model.BudgetBreakdown.Any())
+    {
+        <p class="text-muted">No income or expense activity recorded for @Model.SelectedYear.</p>
+    }
+    else
+    {
+        <table class="table table-bordered table-sm mb-0">
+            <thead class="table-light">
+                <tr>
+                    <th>Budget Code</th>
+                    <th>Type</th>
+                    <th class="text-end">Income</th>
+                    <th class="text-end">Expense</th>
+                    <th class="text-end">Net</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var b in Model.BudgetBreakdown)
+                {
+                    <tr>
+                        <td>@b.Category_Name</td>
+                        <td>@b.Category_Type</td>
+                        <td class="text-end">@(b.TotalIncome > 0 ? b.TotalIncome.ToString("N2") : "-")</td>
+                        <td class="text-end">@(b.TotalExpense > 0 ? b.TotalExpense.ToString("N2") : "-")</td>
+                        <td class="text-end">@b.NetBalance.ToString("N2")</td>
+                    </tr>
+                }
+            </tbody>
+            <tfoot class="fw-bold table-light">
+                <tr>
+                    <td colspan="2">TOTAL</td>
+                    <td class="text-end">@Model.BudgetBreakdown.Sum(b => b.TotalIncome).ToString("N2")</td>
+                    <td class="text-end">@Model.BudgetBreakdown.Sum(b => b.TotalExpense).ToString("N2")</td>
+                    <td class="text-end">@Model.BudgetBreakdown.Sum(b => b.NetBalance).ToString("N2")</td>
+                </tr>
+            </tfoot>
+        </table>
+    }
+</div>

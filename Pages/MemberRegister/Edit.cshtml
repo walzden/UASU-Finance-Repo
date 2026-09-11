@@ -1,0 +1,21 @@
+@page "{contributorId}"
+@model UASU_VoucherApprovals.Pages.MemberRegister.EditModel
+
+<h3 class="mb-3">Edit Contributor - @Model.ContributorId</h3>
+
+<form method="post" class="row g-3" style="max-width: 640px;">
+    <div class="col-md-4">
+        <label class="form-label">PF No.</label>
+        <input asp-for="Input.PF_No" class="form-control" />
+        <span asp-validation-for="Input.PF_No" class="text-danger"></span>
+    </div>
+    <div class="col-md-8">
+        <label class="form-label">Full Name</label>
+        <input asp-for="Input.Full_Name" class="form-control" />
+        <span asp-validation-for="Input.Full_Name" class="text-danger"></span>
+    </div>
+    <div class="col-12">
+        <button type="submit" class="btn btn-primary">Save</button>
+        <a asp-page="/MemberRegister/Index" class="btn btn-outline-secondary">Cancel</a>
+    </div>
+</form>

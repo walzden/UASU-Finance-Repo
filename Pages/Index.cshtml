@@ -1,0 +1,189 @@
+@page
+@model UASU_VoucherApprovals.Pages.IndexModel
+@using System.Text.Json
+
+@if (User.Identity?.IsAuthenticated == true)
+{
+    <h3>Welcome, @User.Identity!.Name</h3>
+    <p class="text-muted">Role: @User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value</p>
+
+    <div class="row g-3 mb-4">
+        <div class="col-sm-6 col-lg-3">
+            <div class="card text-center h-100">
+                <div class="card-body">
+                    <div class="text-muted small">YTD Income</div>
+                    <div class="fs-4 fw-bold">@Model.YtdIncome.ToString("N2")</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-sm-6 col-lg-3">
+            <div class="card text-center h-100">
+                <div class="card-body">
+                    <div class="text-muted small">YTD Expense</div>
+                    <div class="fs-4 fw-bold">@Model.YtdExpense.ToString("N2")</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-sm-6 col-lg-3">
+            <div class="card text-center h-100">
+                <div class="card-body">
+                    <div class="text-muted small">Net Balance</div>
+                    <div class="fs-4 fw-bold @(Model.NetBalance < 0 ? "text-danger" : "text-success")">@Model.NetBalance.ToString("N2")</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-sm-6 col-lg-3">
+            <div class="card text-center h-100 border-danger">
+                <div class="card-body">
+                    <div class="text-muted small">Outstanding Debt</div>
+                    <div class="fs-4 fw-bold text-danger">@Model.OutstandingDebt.ToString("N2")</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row g-4 mb-4">
+        <div class="col-lg-7">
+            <div class="d-flex justify-content-between align-items-baseline mb-2">
+                <h5 class="mb-0">Income vs Expense (@DateTime.Today.Year)</h5>
+                <a href="/Reports" class="small">View full report &rarr;</a>
+            </div>
+            @if (!Model.MonthlyTrend.Any())
+            {
+                <p class="text-muted">No payment data yet this year.</p>
+            }
+            else
+            {
+                <div style="position:relative; height:260px;">
+                    <canvas id="trendChart"></canvas>
+                </div>
+            }
+        </div>
+        <div class="col-lg-5">
+            <div class="d-flex justify-content-between align-items-baseline mb-2">
+                <h5 class="mb-0">Top Expense Categories</h5>
+                <a href="/Reports" class="small">View full report &rarr;</a>
+            </div>
+            @if (!Model.TopExpenseCategories.Any())
+            {
+                <p class="text-muted">No budget-coded expenses yet this year.</p>
+            }
+            else
+            {
+                <div style="position:relative; height:260px;">
+                    <canvas id="budgetChart"></canvas>
+                </div>
+            }
+        </div>
+    </div>
+
+    <div class="row g-4 mb-4">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-baseline mb-2">
+                <h5 class="mb-0">Budget Performance (@DateTime.Today.Year)</h5>
+                <a href="/Reports/BudgetPerformance" class="small">View full report &rarr;</a>
+            </div>
+            @if (!Model.BudgetPerformance.Any())
+            {
+                <p class="text-muted">No proposed budgets for @DateTime.Today.Year yet - add some under Manage &rarr; Proposed Budgets.</p>
+            }
+            else
+            {
+                <p class="mb-2">
+                    <span class="@(Model.CategoriesOverBudget > 0 ? "text-danger fw-bold" : "text-success")">@Model.CategoriesOverBudget of @Model.CategoriesWithProposal</span>
+                    budgeted categories are over their proposed amount so far this year.
+                </p>
+                <div style="position:relative; height:280px;">
+                    <canvas id="budgetPerformanceChart"></canvas>
+                </div>
+            }
+        </div>
+    </div>
+
+    <div class="row g-4 mb-4">
+        <div class="col-lg-6">
+            <div class="d-flex justify-content-between align-items-baseline mb-2">
+                <h5 class="mb-0">Debt Aging</h5>
+                <a href="/Reports/Debts" class="small">Details &rarr;</a>
+            </div>
+            <table class="table table-sm">
+                <tr><td>0-30 days</td><td class="text-end">@Model.DebtAging0to30.ToString("N2")</td></tr>
+                <tr><td class="text-warning">31-60 days</td><td class="text-end">@Model.DebtAging31to60.ToString("N2")</td></tr>
+                <tr><td style="color:#fd7e14;">61-90 days</td><td class="text-end">@Model.DebtAging61to90.ToString("N2")</td></tr>
+                <tr><td class="text-danger">90+ days</td><td class="text-end">@Model.DebtAging90Plus.ToString("N2")</td></tr>
+            </table>
+        </div>
+        <div class="col-lg-6">
+            <h5 class="mb-2">Cash Book Certification</h5>
+            @if (Model.LastCertifiedPeriod is not null)
+            {
+                <p class="mb-1">Last certified: <strong>@Model.LastCertifiedPeriod</strong></p>
+            }
+            else
+            {
+                <p class="mb-1 text-muted">No months certified yet.</p>
+            }
+            @if (Model.CertificationOverdue)
+            {
+                <p class="text-warning mb-1">Certification is overdue.</p>
+            }
+            @if (User.IsInRole("Treasurer") || User.IsInRole("Deputy Treasurer"))
+            {
+                <a href="/Certification/Index" class="small">Go to Monthly Certification &rarr;</a>
+            }
+        </div>
+    </div>
+
+}
+else
+{
+    <p><a href="/Account/Login">Sign in</a> to continue.</p>
+}
+
+@if (User.Identity?.IsAuthenticated == true && (Model.MonthlyTrend.Any() || Model.TopExpenseCategories.Any() || Model.BudgetPerformance.Any()))
+{
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <script>
+        var trendCanvas = document.getElementById('trendChart');
+        if (trendCanvas) {
+            new Chart(trendCanvas, {
+                type: 'bar',
+                data: {
+                    labels: @Html.Raw(JsonSerializer.Serialize(Model.MonthlyTrend.Select(m => m.PeriodLabel))),
+                    datasets: [
+                        { label: 'Income', data: @Html.Raw(JsonSerializer.Serialize(Model.MonthlyTrend.Select(m => m.TotalIncome))), backgroundColor: '#0d6efd' },
+                        { label: 'Expense', data: @Html.Raw(JsonSerializer.Serialize(Model.MonthlyTrend.Select(m => m.TotalExpense))), backgroundColor: '#fd7e14' }
+                    ]
+                },
+                options: { responsive: true, maintainAspectRatio: false }
+            });
+        }
+
+        var budgetCanvas = document.getElementById('budgetChart');
+        if (budgetCanvas) {
+            new Chart(budgetCanvas, {
+                type: 'bar',
+                data: {
+                    labels: @Html.Raw(JsonSerializer.Serialize(Model.TopExpenseCategories.Select(b => b.Category_Name))),
+                    datasets: [{ data: @Html.Raw(JsonSerializer.Serialize(Model.TopExpenseCategories.Select(b => b.TotalExpense))), backgroundColor: '#0d6efd' }]
+                },
+                options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
+            });
+        }
+
+        var budgetPerformanceCanvas = document.getElementById('budgetPerformanceChart');
+        if (budgetPerformanceCanvas) {
+            new Chart(budgetPerformanceCanvas, {
+                type: 'bar',
+                data: {
+                    labels: @Html.Raw(JsonSerializer.Serialize(Model.BudgetPerformance.Select(b => b.Category_Name))),
+                    datasets: [
+                        { label: 'Proposed', data: @Html.Raw(JsonSerializer.Serialize(Model.BudgetPerformance.Select(b => b.Proposed_Amount ?? 0))), backgroundColor: '#6c757d' },
+                        { label: 'Actual', data: @Html.Raw(JsonSerializer.Serialize(Model.BudgetPerformance.Select(b => b.Actual))), backgroundColor: '#0d6efd' }
+                    ]
+                },
+                options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false }
+            });
+        }
+    </script>
+}

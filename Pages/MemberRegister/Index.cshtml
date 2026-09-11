@@ -1,0 +1,58 @@
+@page
+@model UASU_VoucherApprovals.Pages.MemberRegister.IndexModel
+
+<h3 class="mb-3">Union Contributors</h3>
+<p class="text-muted">The permanent roster of everyone who has ever paid union dues or an agency fee - each gets a generated membership number (independent of their MMU PF No.) that stays with them for life, even if their Member/Agency status changes later.</p>
+
+@if (!string.IsNullOrEmpty(Model.StatusMessage))
+{
+    <div class="alert alert-success">@Model.StatusMessage</div>
+}
+@if (!ModelState.IsValid)
+{
+    <div class="alert alert-danger">
+        @foreach (var error in ModelState.Values.SelectMany(v => v.Errors))
+        {
+            <div>@error.ErrorMessage</div>
+        }
+    </div>
+}
+
+<table class="table table-sm table-hover">
+    <thead>
+        <tr>
+            <th>Member No.</th>
+            <th>PF No.</th>
+            <th>Full Name</th>
+            <th></th>
+        </tr>
+    </thead>
+    <tbody>
+        @foreach (var c in Model.Contributors)
+        {
+            <tr>
+                <td>@c.Contributor_ID</td>
+                <td>@c.PF_No</td>
+                <td>@c.Full_Name</td>
+                <td><a asp-page="/MemberRegister/Edit" asp-route-contributorId="@c.Contributor_ID">Edit</a></td>
+            </tr>
+        }
+    </tbody>
+</table>
+
+<h4 class="mt-4">Add Contributor</h4>
+<form method="post" class="row g-3" style="max-width: 640px;">
+    <div class="col-md-4">
+        <label class="form-label">PF No.</label>
+        <input asp-for="Input.PF_No" class="form-control" />
+        <span asp-validation-for="Input.PF_No" class="text-danger"></span>
+    </div>
+    <div class="col-md-8">
+        <label class="form-label">Full Name</label>
+        <input asp-for="Input.Full_Name" class="form-control" />
+        <span asp-validation-for="Input.Full_Name" class="text-danger"></span>
+    </div>
+    <div class="col-12">
+        <button type="submit" class="btn btn-primary">Add Contributor</button>
+    </div>
+</form>

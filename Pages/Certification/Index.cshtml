@@ -1,0 +1,129 @@
+@page
+@model UASU_VoucherApprovals.Pages.Certification.IndexModel
+
+<h3 class="mb-3">Monthly Cash Book Certification</h3>
+<p class="text-muted">Labour Relations (Accounts) Regulations, reg. 8(2)/9(2): balance the cash book at the end of every month and certify that it agrees with actual cash in hand and cash at the bank.</p>
+
+@if (!string.IsNullOrEmpty(Model.StatusMessage))
+{
+    <div class="alert alert-success">@Model.StatusMessage</div>
+}
+
+<details class="mb-4">
+    <summary>Opening Balance (one-time starting point, as of @Model.OpeningBalanceInput.As_Of_Date.ToString("yyyy-MM-dd"): Sh. @Model.OpeningBalanceInput.Cash_Balance.ToString("N2") cash / Sh. @Model.OpeningBalanceInput.Bank_Balance.ToString("N2") bank)</summary>
+    <p class="form-text mt-2">Book balances below are computed purely from what this app has recorded - if there was money in the account before you started using it, that starting figure needs to be set here, or every certification will show a variance that isn't real.</p>
+    <form method="post" asp-page="/Certification/Index" asp-page-handler="SetOpeningBalance" class="row g-3" style="max-width: 480px;">
+        <input type="hidden" name="Year" value="@Model.Year" />
+        <input type="hidden" name="Month" value="@Model.Month" />
+        <div class="col-md-4">
+            <label class="form-label">As Of Date</label>
+            <input asp-for="OpeningBalanceInput.As_Of_Date" type="date" class="form-control" />
+        </div>
+        <div class="col-md-4">
+            <label class="form-label">Cash Balance (Sh.)</label>
+            <input asp-for="OpeningBalanceInput.Cash_Balance" type="number" step="0.01" class="form-control" />
+        </div>
+        <div class="col-md-4">
+            <label class="form-label">Bank Balance (Sh.)</label>
+            <input asp-for="OpeningBalanceInput.Bank_Balance" type="number" step="0.01" class="form-control" />
+        </div>
+        <div class="col-12">
+            <button type="submit" class="btn btn-outline-secondary">Save Opening Balance</button>
+        </div>
+    </form>
+</details>
+
+<form method="get" asp-page="/Certification/Index" class="row g-3 align-items-end" style="max-width: 480px;">
+    <div class="col-6">
+        <label class="form-label">Year</label>
+        <input name="year" type="number" value="@Model.Year" class="form-control" />
+    </div>
+    <div class="col-6">
+        <label class="form-label">Month</label>
+        <select name="month" class="form-select">
+            @for (var m = 1; m <= 12; m++)
+            {
+                <option value="@m" selected="@(m == Model.Month)">@System.Globalization.CultureInfo.InvariantCulture.DateTimeFormat.GetMonthName(m)</option>
+            }
+        </select>
+    </div>
+    <div class="col-12">
+        <button type="submit" class="btn btn-outline-secondary">Load Period</button>
+    </div>
+</form>
+
+<h4 class="mt-4">Book Balances as of @System.Globalization.CultureInfo.InvariantCulture.DateTimeFormat.GetMonthName(Model.Month) @Model.Year (month-end)</h4>
+<table class="table table-sm" style="max-width: 480px;">
+    <tr><th>Cash</th><td>Sh. @Model.BookCashBalance.ToString("N2")</td></tr>
+    <tr><th>Bank</th><td>Sh. @Model.BookBankBalance.ToString("N2")</td></tr>
+</table>
+<div class="form-text mb-3">Computed from Payments up to and including this month - Cash mode only counts as physical cash; M-Pesa/Bank Transfer/Cheque count as bank.</div>
+
+<form method="post" asp-page="/Certification/Index" class="row g-3" style="max-width: 480px;">
+    <input type="hidden" asp-for="Input.Period_Year" />
+    <input type="hidden" asp-for="Input.Period_Month" />
+    <div class="col-md-6">
+        <label class="form-label">Actual Cash on Hand (Sh.)</label>
+        <input asp-for="Input.Actual_Cash_On_Hand" type="number" step="0.01" class="form-control" />
+        <span asp-validation-for="Input.Actual_Cash_On_Hand" class="text-danger"></span>
+    </div>
+    <div class="col-md-6">
+        <label class="form-label">Actual Bank Balance (Sh.)</label>
+        <input asp-for="Input.Actual_Bank_Balance" type="number" step="0.01" class="form-control" />
+        <span asp-validation-for="Input.Actual_Bank_Balance" class="text-danger"></span>
+    </div>
+    <div class="col-12">
+        <label class="form-label">Notes (e.g. explanation for any variance)</label>
+        <textarea asp-for="Input.Notes" class="form-control" rows="2"></textarea>
+    </div>
+    <div class="col-12">
+        <div class="form-text mb-2">
+            This certifies <strong>@System.Globalization.CultureInfo.InvariantCulture.DateTimeFormat.GetMonthName(Model.Month) @Model.Year</strong>
+            &mdash; the period loaded above. Use "Load Period" first if that's not the month you mean to certify.
+        </div>
+        <button type="submit" class="btn btn-primary">
+            Certify @System.Globalization.CultureInfo.InvariantCulture.DateTimeFormat.GetMonthName(Model.Month) @Model.Year
+        </button>
+    </div>
+</form>
+
+<h4 class="mt-4">Certification History</h4>
+@if (!Model.Certifications.Any())
+{
+    <p class="text-muted">No months certified yet.</p>
+}
+else
+{
+    <p><a class="btn btn-outline-secondary btn-sm" href="?handler=ExportCsv">Export CSV</a></p>
+    <table class="table table-sm">
+        <thead>
+            <tr>
+                <th>Period</th>
+                <th>Book Cash</th>
+                <th>Actual Cash</th>
+                <th>Book Bank</th>
+                <th>Actual Bank</th>
+                <th>Agrees?</th>
+                <th>Certified By</th>
+                <th>Date</th>
+                <th>Notes</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var c in Model.Certifications)
+            {
+                <tr class="@(c.Balances ? "" : "table-warning")">
+                    <td>@System.Globalization.CultureInfo.InvariantCulture.DateTimeFormat.GetMonthName(c.Period_Month) @c.Period_Year</td>
+                    <td>@c.Book_Cash_Balance.ToString("N2")</td>
+                    <td>@c.Actual_Cash_On_Hand.ToString("N2")</td>
+                    <td>@c.Book_Bank_Balance.ToString("N2")</td>
+                    <td>@c.Actual_Bank_Balance.ToString("N2")</td>
+                    <td>@(c.Balances ? "Yes" : "No - see notes")</td>
+                    <td>@c.CertifiedByName</td>
+                    <td>@c.Certified_Date.ToString("yyyy-MM-dd")</td>
+                    <td>@c.Notes</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}

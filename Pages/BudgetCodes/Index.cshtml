@@ -1,0 +1,52 @@
+@page
+@model UASU_VoucherApprovals.Pages.BudgetCodes.IndexModel
+
+<h3 class="mb-3">Budget Codes</h3>
+
+@if (!string.IsNullOrEmpty(Model.StatusMessage))
+{
+    <div class="alert alert-success">@Model.StatusMessage</div>
+}
+
+<table class="table table-sm">
+    <thead>
+        <tr>
+            <th>ID</th>
+            <th>Category</th>
+            <th>Type</th>
+            <th></th>
+        </tr>
+    </thead>
+    <tbody>
+        @foreach (var b in Model.BudgetCodes)
+        {
+            <tr>
+                <td>@b.Budget_ID</td>
+                <td>@b.Category_Name</td>
+                <td>@b.Category_Type</td>
+                <td><a asp-page="/BudgetCodes/Edit" asp-route-budgetId="@b.Budget_ID">Edit</a></td>
+            </tr>
+        }
+    </tbody>
+</table>
+
+<h4 class="mt-4">Add Budget Code</h4>
+<form method="post" asp-page="/BudgetCodes/Index" class="row g-3" style="max-width: 640px;">
+    <div class="col-12">
+        <label class="form-label">Category Name</label>
+        <input asp-for="Input.Category_Name" class="form-control" />
+        <span asp-validation-for="Input.Category_Name" class="text-danger"></span>
+    </div>
+    <div class="col-md-6">
+        <label class="form-label">Category Type</label>
+        <select asp-for="Input.Category_Type" class="form-select">
+            <option value="Expense">Expense</option>
+            <option value="Income">Income</option>
+        </select>
+        <span asp-validation-for="Input.Category_Type" class="text-danger"></span>
+        <div class="form-text">Drives whether Budget Performance compares this code's proposed amount against money received or money spent.</div>
+    </div>
+    <div class="col-12">
+        <button type="submit" class="btn btn-primary">Add Budget Code</button>
+    </div>
+</form>

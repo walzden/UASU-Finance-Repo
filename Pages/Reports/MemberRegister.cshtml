@@ -1,0 +1,163 @@
+@page
+@model UASU_VoucherApprovals.Pages.Reports.MemberRegisterModel
+
+<style>
+    /* Previous approach: manually estimate how many rows fit on one
+       physical page, chunk the data into that many <table>s, and
+       re-render the letterhead above each chunk. Every guess (row
+       height, column width) had to be exactly right or a page either
+       overflowed (dropping its letterhead onto an unplanned extra
+       page) or under-filled (wasted space) - and font size, padding,
+       and column width all interact, so fixing one kept breaking
+       another. This is the more robust alternative: ONE continuous
+       <table> per section, with the full letterhead built as the
+       FIRST row of its <thead> and the column labels as the second -
+       browsers natively repeat a table's entire <thead> on every
+       printed page a long table spans, so pagination (including where
+       the letterhead reappears) is the browser's job, not a guess.
+       table-layout is left at its default (auto) instead of `fixed`
+       with manual percentages, so every column sizes itself from its
+       own actual content - the browser's real glyph measurements,
+       not an estimate, which is what guarantees nothing truncates. */
+    @@media print {
+        @@page { size: A3 landscape; margin: 0; }
+        .container { padding: 5mm !important; }
+        table { font-size: 13.5px; }
+        th, td { padding: .3rem .4rem !important; white-space: nowrap; }
+        tr { break-inside: avoid; }
+        thead { display: table-header-group; }
+        .register-section-break { break-before: page; }
+    }
+</style>
+
+<h3 class="mb-1 d-print-none">Union Membership Register</h3>
+<p class="text-muted d-print-none">The annual register submitted to the Registrar of Trade Unions (RTU). The letterhead repeats on every printed page automatically.</p>
+
+<form method="get" class="row g-2 align-items-end mb-3 d-print-none">
+    <div class="col-auto">
+        <label class="form-label mb-0">Year</label>
+        <select name="year" class="form-select" onchange="this.form.submit()">
+            @foreach (var y in Model.AvailableYears)
+            {
+                <option value="@y" selected="@(Model.SelectedYear == y)">@y</option>
+            }
+            @if (!Model.AvailableYears.Contains(Model.SelectedYear))
+            {
+                <option value="@Model.SelectedYear" selected>@Model.SelectedYear</option>
+            }
+        </select>
+    </div>
+    <div class="col-auto">
+        <label class="form-label mb-0">View</label>
+        <select name="view" class="form-select" onchange="this.form.submit()">
+            <option value="financial" selected="@(Model.ViewMode != "simple")">Financial (amounts &amp; totals)</option>
+            <option value="simple" selected="@(Model.ViewMode == "simple")">Simple (check / dash only)</option>
+        </select>
+    </div>
+</form>
+
+@if (Model.Members.Any() || Model.AgencyPayers.Any())
+{
+    <div class="mb-3 d-print-none">
+        <button type="button" class="btn btn-primary" onclick="window.print()">Print / Save as PDF</button>
+    </div>
+}
+
+@{
+    var isFinancial = Model.ViewMode != "simple";
+    var columnCount = isFinancial ? 16 : 15;
+
+    async Task RenderRegisterAsync(string sectionLabel, List<UASU_VoucherApprovals.Models.MemberRegisterRow> rows)
+    {
+        var monthTotals = new decimal[12];
+        foreach (var r in rows)
+            for (var m = 0; m < 12; m++)
+                monthTotals[m] += r.MonthlyAmounts[m] ?? 0;
+        var grandTotal = rows.Sum(r => r.Total);
+
+        <table class="table table-bordered table-sm mb-4">
+            <thead class="table-light">
+                <tr>
+                    <th colspan="@columnCount" class="text-center border-0 bg-white">
+                        <div class="d-flex align-items-center gap-3">
+                            <img src="~/images/uasu-Logo.jpg" alt="UASU logo" style="height:55px;"
+                                 onerror="this.onerror=null; this.src='/images/uasu-logo-placeholder.svg';" />
+                            <div class="text-center flex-grow-1">
+                                <h4 class="fw-bold mb-0">UNIVERSITIES' ACADEMIC STAFF UNION</h4>
+                                <h5 class="mb-0">MEMBERSHIP REGISTER - YEAR @Model.SelectedYear</h5>
+                                <div class="small text-muted">@sectionLabel Address: P.O. Box 15653-00503, Nairobi, Kenya</div>
+                            </div>
+                        </div>
+                    </th>
+                </tr>
+                <tr>
+                    <th>MEMBER No.</th>
+                    <th>PF No.</th>
+                    <th>NAMES</th>
+                    @foreach (var m in UASU_VoucherApprovals.Pages.Reports.MemberRegisterModel.MonthAbbrev)
+                    {
+                        <th class="text-center">@m</th>
+                    }
+                    @if (isFinancial)
+                    {
+                        <th class="text-end">TOTAL</th>
+                    }
+                </tr>
+            </thead>
+            <tbody>
+                @if (!rows.Any())
+                {
+                    <tr>
+                        <td colspan="@columnCount" class="text-muted">No contributors recorded.</td>
+                    </tr>
+                }
+                else
+                {
+                    @foreach (var r in rows)
+                    {
+                        <tr>
+                            <td>@r.Contributor_ID</td>
+                            <td>@r.PF_No</td>
+                            <td>@r.Full_Name</td>
+                            @foreach (var amount in r.MonthlyAmounts)
+                            {
+                                @if (isFinancial)
+                                {
+                                    <td class="text-end">@(amount > 0 ? amount.Value.ToString("N2") : "-")</td>
+                                }
+                                else
+                                {
+                                    <td class="text-center">@(amount > 0 ? "✓" : "-")</td>
+                                }
+                            }
+                            @if (isFinancial)
+                            {
+                                <td class="text-end fw-semibold">@(r.Total > 0 ? r.Total.ToString("N2") : "-")</td>
+                            }
+                        </tr>
+                    }
+
+                    @if (isFinancial)
+                    {
+                        <tr class="fw-bold table-light">
+                            <td colspan="3">TOTALS</td>
+                            @foreach (var t in monthTotals)
+                            {
+                                <td class="text-end">@(t > 0 ? t.ToString("N2") : "-")</td>
+                            }
+                            <td class="text-end">@(grandTotal > 0 ? grandTotal.ToString("N2") : "-")</td>
+                        </tr>
+                    }
+                }
+            </tbody>
+        </table>
+        await Task.CompletedTask;
+    }
+}
+
+<div>
+    @{ await RenderRegisterAsync("Members", Model.Members); }
+</div>
+<div class="register-section-break">
+    @{ await RenderRegisterAsync("Agency Payers", Model.AgencyPayers); }
+</div>

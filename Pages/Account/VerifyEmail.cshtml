@@ -1,0 +1,33 @@
+@page
+@model UASU_VoucherApprovals.Pages.Account.VerifyEmailModel
+
+<div class="row justify-content-center">
+    <div class="col-md-5">
+        <h3 class="mb-3">Verify your email</h3>
+        <p>This is your first sign-in. We've sent a 6-digit code to <strong>@Model.MaskedEmail</strong> - enter it below to confirm this is an address you actually control before you set your password.</p>
+
+        @if (!string.IsNullOrEmpty(Model.DevPreviewCode))
+        {
+            <div class="alert alert-warning">
+                <strong>Development preview</strong> - no SMTP server is configured yet (<code>EmailSettings:Host</code>), so no email was actually sent. The code is: <code>@Model.DevPreviewCode</code>
+            </div>
+        }
+
+        @if (!string.IsNullOrEmpty(Model.StatusMessage))
+        {
+            <div class="alert @(Model.StatusIsError ? "alert-danger" : "alert-success")">@Model.StatusMessage</div>
+        }
+
+        <form method="post">
+            <div class="mb-3">
+                <label class="form-label">Verification Code</label>
+                <input asp-for="Input.Code" class="form-control" maxlength="6" autofocus autocomplete="one-time-code" />
+                <span asp-validation-for="Input.Code" class="text-danger small"></span>
+            </div>
+            <button type="submit" class="btn btn-primary">Verify</button>
+        </form>
+        <form method="post" asp-page-handler="Resend" class="mt-2">
+            <button type="submit" class="btn btn-link p-0">Resend code</button>
+        </form>
+    </div>
+</div>

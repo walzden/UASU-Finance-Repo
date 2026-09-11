@@ -1,0 +1,200 @@
+@page
+@model UASU_VoucherApprovals.Pages.Reports.OfficialTotalsModel
+@using UASU_VoucherApprovals.Services
+
+<h3 class="mb-3">Official Totals</h3>
+
+<style>
+    .official-totals-bar-track { background: rgba(127, 127, 127, 0.15); border-radius: 3px; height: 6px; overflow: hidden; }
+    .official-totals-bar-fill { background: #6f42c1; height: 100%; }
+
+    /* CSS-only hover tooltip - the budget-line breakdown is rendered
+       into the page for every amount and just hidden until hovered
+       (or keyboard-focused), no JavaScript or extra request involved. */
+    .amount-hover { position: relative; border-bottom: 1px dotted #6c757d; cursor: help; display: inline-block; }
+    .amount-hover .budget-tooltip {
+        display: none; position: absolute; right: 0; top: 100%; margin-top: 6px; z-index: 20;
+        width: 280px; text-align: left; background: var(--bs-body-bg, #fff); border: 1px solid rgba(0,0,0,.15);
+        border-radius: .5rem; box-shadow: 0 .5rem 1.5rem rgba(0,0,0,.15); padding: .75rem; font-weight: normal;
+    }
+    .amount-hover:hover .budget-tooltip, .amount-hover:focus .budget-tooltip { display: block; }
+    .budget-tooltip table { margin-bottom: 0; font-size: .85rem; }
+    .budget-tooltip .tooltip-title { font-size: .72rem; text-transform: uppercase; letter-spacing: .03em; color: #6c757d; margin-bottom: .5rem; }
+    .amount-hover.total-hover .budget-tooltip { border-color: #6f42c1; }
+</style>
+
+@{
+    // Shared by both tables below - wraps just the amount, not the
+    // whole cell, so each period column (and Total) gets its own
+    // contextually-scoped breakdown rather than one breakdown for the
+    // whole row. lines is null/empty for a cell with nothing to show
+    // (e.g. an official with no budget-coded vouchers at all), in which
+    // case this renders the bare amount with no hover.
+    async Task RenderAmountHoverAsync(string periodLabel, decimal amount, List<OfficialBudgetLineTotal>? lines, bool isTotal = false)
+    {
+        if (lines is null || lines.Count == 0)
+        {
+            @amount.ToString("N2")
+        }
+        else
+        {
+            <span class="amount-hover @(isTotal ? "total-hover" : "")" tabindex="0">
+                @amount.ToString("N2")
+                <div class="budget-tooltip">
+                    <div class="tooltip-title">Budget line breakdown &mdash; @periodLabel</div>
+                    <table class="table table-sm mb-0">
+                        <tbody>
+                            @foreach (var line in lines)
+                            {
+                                <tr><td>@line.Category_Name</td><td class="text-end">@line.TotalPaid.ToString("N2")</td></tr>
+                            }
+                        </tbody>
+                        <tfoot>
+                            <tr class="fw-bold border-top"><td>Total</td><td class="text-end">@amount.ToString("N2")</td></tr>
+                        </tfoot>
+                    </table>
+                </div>
+            </span>
+        }
+        await Task.CompletedTask;
+    }
+}
+
+<ul class="nav nav-tabs mb-3">
+    <li class="nav-item">
+        <a class="nav-link @(Model.IsItd ? "active" : "")" asp-page="/Reports/OfficialTotals">Total (ITD)</a>
+    </li>
+    @foreach (var p in Enum.GetValues<ReportPeriod>())
+    {
+        <li class="nav-item">
+            <a class="nav-link @(Model.SelectedPeriod == p ? "active" : "")"
+               asp-page="/Reports/OfficialTotals" asp-route-period="@p"
+               asp-route-year="@(p == ReportPeriod.Yearly ? null : Model.SelectedYear)">@p</a>
+        </li>
+    }
+</ul>
+
+@if (Model.ShowYearPicker)
+{
+    <form method="get" class="row g-2 align-items-end mb-3">
+        <input type="hidden" name="period" value="@Model.SelectedPeriod" />
+        <div class="col-auto">
+            <label class="form-label mb-0">Year</label>
+            <select name="year" class="form-select" onchange="this.form.submit()">
+                @foreach (var y in Model.AvailableYears)
+                {
+                    <option value="@y" selected="@(Model.SelectedYear == y)">@y</option>
+                }
+            </select>
+        </div>
+    </form>
+}
+
+@if (Model.IsItd)
+{
+    if (!Model.LifetimeRows.Any())
+    {
+        <p class="text-muted">No payments to officials recorded yet.</p>
+    }
+    else
+    {
+        <table class="table table-bordered table-hover align-middle" style="max-width:640px;">
+            <thead class="table-light">
+                <tr>
+                    <th>Official</th>
+                    <th class="text-end">Total Paid (Sh.)</th>
+                    <th style="width:35%;">Share</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var r in Model.LifetimeRows)
+                {
+                    var pct = Model.GrandTotal > 0 ? (double)(r.TotalPaid / Model.GrandTotal * 100) : 0;
+                    <tr>
+                        <td>
+                            @r.FullName
+                            @if (!string.IsNullOrEmpty(r.Role)) { <span class="text-muted small">&middot; @r.Role</span> }
+                        </td>
+                        <td class="text-end">@{ await RenderAmountHoverAsync("Total (ITD)", r.TotalPaid, Model.BudgetBreakdownTotal.GetValueOrDefault(r.OfficialID)); }</td>
+                        <td>
+                            <div class="official-totals-bar-track">
+                                <div class="official-totals-bar-fill" style="width:@(pct.ToString("0.#"))%;"></div>
+                            </div>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+            <tfoot class="table-light fw-bold">
+                <tr>
+                    <td>Total</td>
+                    <td class="text-end">@Model.GrandTotal.ToString("N2")</td>
+                    <td></td>
+                </tr>
+            </tfoot>
+        </table>
+
+        <a class="btn btn-outline-secondary mb-3" asp-page="/Reports/OfficialTotals" asp-page-handler="ExportXlsx">Export Excel (Summary + Detail)</a>
+    }
+}
+else
+{
+    if (!Model.Rows.Any())
+    {
+        <p class="text-muted">No payments to officials for this period yet.</p>
+    }
+    else
+    {
+        <div style="overflow-x:auto;">
+            <table class="table table-bordered table-hover align-middle">
+                <thead class="table-light">
+                    <tr>
+                        <th>Official</th>
+                        @foreach (var col in Model.PeriodColumns)
+                        {
+                            <th class="text-end">@col (Sh.)</th>
+                        }
+                        <th class="text-end">Total (Sh.)</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var r in Model.Rows)
+                    {
+                        <tr>
+                            <td>
+                                @r.FullName
+                                @if (!string.IsNullOrEmpty(r.Role)) { <span class="text-muted small">&middot; @r.Role</span> }
+                            </td>
+                            @foreach (var col in Model.PeriodColumns)
+                            {
+                                <td class="text-end">
+                                    @if (r.ByPeriod.TryGetValue(col, out var v))
+                                    {
+                                        await RenderAmountHoverAsync(col, v, Model.BudgetBreakdownByPeriod.GetValueOrDefault((r.OfficialID, col)));
+                                    }
+                                    else
+                                    {
+                                        <text>&mdash;</text>
+                                    }
+                                </td>
+                            }
+                            <td class="text-end fw-semibold">@{ await RenderAmountHoverAsync("Total (all periods shown)", r.Total, Model.BudgetBreakdownTotal.GetValueOrDefault(r.OfficialID), isTotal: true); }</td>
+                        </tr>
+                    }
+                </tbody>
+                <tfoot class="table-light fw-bold">
+                    <tr>
+                        <td>Total</td>
+                        @foreach (var col in Model.PeriodColumns)
+                        {
+                            <td class="text-end">@Model.ColumnTotals[col].ToString("N2")</td>
+                        }
+                        <td class="text-end">@Model.GrandTotal.ToString("N2")</td>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+
+        <a class="btn btn-outline-secondary mb-3" asp-page="/Reports/OfficialTotals" asp-page-handler="ExportXlsx"
+           asp-route-period="@Model.SelectedPeriod" asp-route-year="@Model.SelectedYear">Export Excel (Summary + Detail)</a>
+    }
+}

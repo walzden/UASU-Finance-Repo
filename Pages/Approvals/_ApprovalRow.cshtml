@@ -1,0 +1,38 @@
+@model UASU_VoucherApprovals.Models.PendingApproval
+
+<tr>
+    <td>@Model.Voucher_ID</td>
+    <td>@Model.VoucherDate.ToString("yyyy-MM-dd")</td>
+    <td>@Model.Transaction_Type</td>
+    <td>@Model.PayeeDisplay</td>
+    <td>@Model.Amount.ToString("N2")</td>
+    <td>
+        @Model.Description
+        @if (!string.IsNullOrWhiteSpace(Model.Supersedes_Voucher_ID))
+        {
+            <div class="small text-muted mt-1">
+                Corrects @Model.Supersedes_Voucher_ID, previously rejected@(string.IsNullOrWhiteSpace(Model.SupersededRejectionReason) ? "" : $": \"{Model.SupersededRejectionReason}\"")
+            </div>
+        }
+    </td>
+    <td>
+        @if (Model.ChairmanApproved) { <span class="badge bg-success">Chairman approved</span> }
+        @if (Model.ChairmanRejected) { <span class="badge bg-danger">Chairman rejected</span> }
+        @if (Model.ChapterSecretaryApproved) { <span class="badge bg-success">Chapter Sec. approved</span> }
+        @if (Model.ChapterSecretaryRejected) { <span class="badge bg-danger">Chapter Sec. rejected</span> }
+        @if (!Model.ChairmanApproved && !Model.ChairmanRejected && !Model.ChapterSecretaryApproved && !Model.ChapterSecretaryRejected)
+        {
+            <span class="text-muted">None yet</span>
+        }
+    </td>
+    <td>
+        <form method="post" asp-page-handler="Decide" class="d-flex flex-column gap-1">
+            <input type="hidden" name="VoucherID" value="@Model.Voucher_ID" />
+            <textarea name="Comments" class="form-control form-control-sm" rows="2" placeholder="Comments (optional)"></textarea>
+            <div class="d-flex gap-1">
+                <button type="submit" name="Status" value="Approved" class="btn btn-success btn-sm flex-fill">Approve</button>
+                <button type="submit" name="Status" value="Rejected" class="btn btn-danger btn-sm flex-fill">Reject</button>
+            </div>
+        </form>
+    </td>
+</tr>

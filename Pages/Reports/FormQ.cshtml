@@ -1,0 +1,161 @@
+@page
+@model UASU_VoucherApprovals.Pages.Reports.FormQModel
+
+<style>
+    @@media print {
+        table { font-size: 11px; }
+        .formq-page-break { break-after: page; }
+    }
+</style>
+
+<h3 class="mb-1 d-print-none">Treasurer's Receipt (Form Q)</h3>
+<p class="text-muted d-print-none">One Form Q per income payment received from the National Office - member subscriptions or a grant.</p>
+@if (Model.FormQs.Any())
+{
+    <div class="mb-3 d-print-none">
+        <button type="button" class="btn btn-primary" onclick="window.print()">Print / Save as PDF</button>
+    </div>
+}
+
+<form method="get" class="row g-2 align-items-end mb-3 d-print-none">
+    <div class="col-auto">
+        <label class="form-label mb-0">View</label>
+        <select name="mode" class="form-select" onchange="this.form.submit()">
+            <option value="single" selected="@(Model.Mode != "all")">Single receipt</option>
+            <option value="all" selected="@(Model.Mode == "all")">All receipts for a year</option>
+        </select>
+    </div>
+    <div class="col-auto">
+        <label class="form-label mb-0">Year</label>
+        <select name="year" class="form-select" onchange="this.form.submit()">
+            @foreach (var y in Model.AvailableYears)
+            {
+                <option value="@y" selected="@(Model.SelectedYear == y)">@y</option>
+            }
+        </select>
+    </div>
+    @if (Model.Mode != "all")
+    {
+        <div class="col-auto">
+            <label class="form-label mb-0">Receipt</label>
+            <select name="payment" class="form-select" onchange="this.form.submit()" style="min-width:320px;">
+                @foreach (var r in Model.Receipts.Where(r => r.Payment_Date.Year == Model.SelectedYear))
+                {
+                    <option value="@r.Payment_ID" selected="@(Model.SelectedPaymentId == r.Payment_ID)">
+                        @r.Payment_ID - @r.Payment_Date.ToString("dd MMM yyyy") (Sh. @r.Total.ToString("N2"))
+                    </option>
+                }
+            </select>
+        </div>
+    }
+</form>
+
+@{
+    async Task RenderFormQAsync(UASU_VoucherApprovals.Pages.Reports.FormQModel.FormQData f)
+    {
+        <div class="border p-4" style="max-width:800px;">
+            <div class="d-flex justify-content-between align-items-start mb-2">
+                <img src="~/images/uasu-Logo.jpg" alt="UASU logo" style="height:70px;"
+                     onerror="this.onerror=null; this.src='/images/uasu-logo-placeholder.svg';" />
+                <div class="text-center flex-grow-1 px-2">
+                    <h4 class="fw-bold mb-0">UNIVERSITIES' ACADEMIC STAFF UNION</h4>
+                    <h5 class="fw-bold mb-0">TREASURER'S RECEIPT</h5>
+                </div>
+                <div class="text-end small" style="max-width:230px; line-height:1.3;">
+                    <strong>HEAD OFFICE</strong><br />
+                    Uniafric House, 3rd Floor Rm 301<br />
+                    Koinange Street<br />
+                    P.O. Box 30198 - 00100<br />
+                    Nairobi, Kenya<br />
+                    Cell: +254 721 947 715<br />
+                    +254 739 306 023<br />
+                    Email: uasunational@yahoo.com
+                </div>
+            </div>
+
+            <div class="d-flex justify-content-between align-items-center border-top border-bottom py-2 mb-3">
+                <strong>FORM: Q</strong>
+                <strong class="text-danger">No. @f.Payment_ID</strong>
+                <span>Date: <strong>@f.Payment_Date.ToString("dd/MM/yyyy")</strong></span>
+            </div>
+
+            <div class="border rounded p-2 text-center mb-3 ms-auto" style="max-width:260px;">
+                <div class="small text-muted">KShs.</div>
+                <div class="fw-bold" style="font-size:1.2rem;">@f.Total.ToString("N2")</div>
+                <div class="small text-muted">@f.Payment_Mode</div>
+            </div>
+
+            <p class="mb-2">RECEIVED from <strong>@f.PayerName</strong></p>
+            <p class="mb-3">the sum of shillings <strong>@f.AmountInWords</strong></p>
+            @if (!string.IsNullOrWhiteSpace(f.Reference_No))
+            {
+                <p class="mb-3 small text-muted">Reference: @f.Reference_No</p>
+            }
+
+            <p class="mb-2 fw-semibold">Being payment of:</p>
+            <table class="table table-bordered table-sm mb-3">
+                <tbody>
+                    @foreach (var (bucket, amount) in f.AmountsByBucket)
+                    {
+                        <tr>
+                            <td>@bucket</td>
+                            <td class="text-end" style="width:20%;">@(amount > 0 ? amount.ToString("N2") : "")</td>
+                        </tr>
+                    }
+                </tbody>
+                <tfoot class="fw-bold table-light">
+                    <tr>
+                        <td>TOTAL</td>
+                        <td class="text-end">@f.Total.ToString("N2")</td>
+                    </tr>
+                </tfoot>
+            </table>
+
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <div>For: UNIVERSITIES ACADEMIC STAFF UNION</div>
+                    <div class="fst-italic">With Thanks</div>
+                </div>
+                @{ await RenderTreasurerStampAsync(f.Payment_Date); }
+            </div>
+        </div>
+        await Task.CompletedTask;
+    }
+
+    // A recorded Payment is itself the evidence here - RecordPaymentAsync/
+    // CreateVoucherAsync's auto-pay path are both TreasuryAdmin-only (see
+    // CLAUDE.md), so the receipt existing at all means the Treasurer/
+    // Deputy Treasurer already confirmed the funds landed - this replaces
+    // the physical form's blank signature line rather than asking for a
+    // fresh one on top of it. No specific name shown, same reasoning as
+    // Form R's Treasurer stamp: Payments has no column for which official
+    // recorded it, only when.
+    async Task RenderTreasurerStampAsync(DateTime paymentDate)
+    {
+        <div class="border rounded p-2 text-center" style="border-color:#198754 !important; border-width:2px !important; min-width:220px;">
+            <div class="text-success fw-bold" style="font-size:1.05rem;">✓ FUNDS RECEIVED</div>
+            <div class="small text-muted">Treasurer/Deputy Treasurer</div>
+            <div class="small text-muted">@paymentDate.ToString("dd MMM yyyy")</div>
+        </div>
+        await Task.CompletedTask;
+    }
+}
+
+@if (!Model.FormQs.Any())
+{
+    <p class="text-muted">No receipts found for this selection.</p>
+}
+else
+{
+    @for (var i = 0; i < Model.FormQs.Count; i++)
+    {
+        var isLast = i == Model.FormQs.Count - 1;
+        <div class="@(isLast ? "" : "formq-page-break") mb-4">
+            @{ await RenderFormQAsync(Model.FormQs[i]); }
+        </div>
+    }
+
+    <div class="d-print-none mt-3">
+        <button type="button" class="btn btn-primary" onclick="window.print()">Print / Save as PDF</button>
+    </div>
+}

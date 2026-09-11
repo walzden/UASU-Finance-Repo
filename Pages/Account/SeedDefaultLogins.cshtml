@@ -1,0 +1,24 @@
+@page
+@model UASU_VoucherApprovals.Pages.Account.SeedDefaultLoginsModel
+
+<h3>Add Logins for Officials</h3>
+<p class="text-muted">
+    Creates a login for every current official in Ref_Officials who doesn't already have
+    one, using the email address already on file as the username. Default password:
+    <code>test1234</code>, changed on first login. Safe to re-run any time someone new
+    joins — it never touches an account that already exists.
+</p>
+<p class="text-muted">
+    Role still controls what they can do: only Chairman, Chapter Secretary, Treasurer, and
+    Deputy Treasurer get anything beyond read-only access. Everyone else lands on the
+    dashboard and reports after signing in — nothing they can approve, create, or record.
+</p>
+
+<form method="post" asp-page="/Account/SeedDefaultLogins">
+    <button type="submit" class="btn btn-primary">Seed logins now</button>
+</form>
+
+@if (Model.Results.Any())
+{
+    <pre class="bg-light p-3 mt-3 border">@string.Join("\n", Model.Results)</pre>
+}

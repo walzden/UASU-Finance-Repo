@@ -1,0 +1,78 @@
+@page
+@model UASU_VoucherApprovals.Pages.Reports.BudgetPerformanceModel
+
+<h3 class="mb-3">Budget Performance</h3>
+
+<form method="get" class="row g-2 align-items-end mb-3">
+    <div class="col-auto">
+        <label class="form-label mb-0">Fiscal Year</label>
+        <select name="year" class="form-select" onchange="this.form.submit()">
+            @foreach (var y in Model.AvailableYears)
+            {
+                <option value="@y" selected="@(Model.FiscalYear == y)">@y</option>
+            }
+            @if (!Model.AvailableYears.Contains(Model.FiscalYear))
+            {
+                <option value="@Model.FiscalYear" selected>@Model.FiscalYear</option>
+            }
+        </select>
+    </div>
+</form>
+
+@if (!Model.Rows.Any())
+{
+    <p class="text-muted">No budget codes found.</p>
+}
+else
+{
+    <table class="table table-bordered table-hover align-middle">
+        <thead class="table-light">
+            <tr>
+                <th>Budget Category</th>
+                <th>Type</th>
+                <th class="text-end">Proposed (Sh.)</th>
+                <th class="text-end">Actual (Sh.)</th>
+                <th class="text-end">Variance (Sh.)</th>
+                <th class="text-end">% Used</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var r in Model.Rows)
+            {
+                <tr class="@(r.Proposed_Amount is null ? "text-muted" : "")">
+                    <td>@r.Category_Name</td>
+                    <td>@r.Category_Type</td>
+                    <td class="text-end">@(r.Proposed_Amount.HasValue ? r.Proposed_Amount.Value.ToString("N2") : "— no proposal —")</td>
+                    <td class="text-end">@r.Actual.ToString("N2")</td>
+                    @if (r.Variance.HasValue)
+                    {
+                        <td class="text-end @(r.Variance.Value < 0 ? "text-danger" : "text-success")">@r.Variance.Value.ToString("N2")</td>
+                    }
+                    else
+                    {
+                        <td class="text-end">—</td>
+                    }
+                    @if (r.PercentUsed.HasValue)
+                    {
+                        <td class="text-end @(r.PercentUsed.Value > 100 ? "text-danger fw-bold" : "")">@r.PercentUsed.Value.ToString("F1")%</td>
+                    }
+                    else
+                    {
+                        <td class="text-end">—</td>
+                    }
+                </tr>
+            }
+        </tbody>
+        <tfoot class="table-light fw-bold">
+            <tr>
+                <td colspan="2">Total</td>
+                <td class="text-end">@Model.Rows.Sum(r => r.Proposed_Amount ?? 0).ToString("N2")</td>
+                <td class="text-end">@Model.Rows.Sum(r => r.Actual).ToString("N2")</td>
+                <td class="text-end">@Model.Rows.Sum(r => r.Variance ?? 0).ToString("N2")</td>
+                <td></td>
+            </tr>
+        </tfoot>
+    </table>
+
+    <a class="btn btn-outline-secondary mb-3" href="?year=@Model.FiscalYear&handler=ExportCsv">Export CSV</a>
+}

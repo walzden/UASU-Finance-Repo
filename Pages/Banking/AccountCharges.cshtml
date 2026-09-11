@@ -1,0 +1,129 @@
+@page
+@model UASU_VoucherApprovals.Pages.Banking.AccountChargesModel
+
+<h3 class="mb-2">Account Charges</h3>
+<p class="text-muted mb-4">
+    For charges the bank deducts directly from the account &mdash; ledger fees, excise duty,
+    maintenance charges &mdash; that aren't caused by a specific payment or withdrawal. These sit
+    outside Withdrawal Breakdown reconciliation (there's no withdrawal to net them against) and get
+    their own running total per account instead.
+</p>
+
+@if (!string.IsNullOrEmpty(Model.StatusMessage))
+{
+    <div class="alert @(Model.StatusIsError ? "alert-danger" : "alert-success")">@Model.StatusMessage</div>
+}
+
+@if (Model.Charges.Any())
+{
+    <div class="row g-3 mb-4">
+        <div class="col-sm-6 col-lg-4">
+            <div class="card text-center h-100 border-warning">
+                <div class="card-body">
+                    <div class="text-muted small">Total Account Charges (all time)</div>
+                    <div class="fs-4 fw-bold text-warning">@Model.GrandTotal.ToString("N2")</div>
+                </div>
+            </div>
+        </div>
+        @foreach (var t in Model.TotalsByAccount)
+        {
+            <div class="col-sm-6 col-lg-4">
+                <div class="card text-center h-100">
+                    <div class="card-body">
+                        <div class="text-muted small">@t.BankAccount</div>
+                        <div class="fs-5 fw-bold">@t.Total.ToString("N2")</div>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+}
+
+<div class="card mb-4">
+    <div class="card-header">Log an Account Charge</div>
+    <div class="card-body">
+        <form method="post" asp-page="/Banking/AccountCharges" class="row g-3">
+            <div class="col-md-4">
+                <label class="form-label">Charge Date</label>
+                <input asp-for="Input.Charge_Date" type="date" class="form-control" />
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Bank Account</label>
+                <input asp-for="Input.Bank_Account" class="form-control" list="bankAccounts" />
+                <datalist id="bankAccounts">
+                    @foreach (var acct in Model.Charges.Select(c => c.Bank_Account).Distinct())
+                    {
+                        <option value="@acct"></option>
+                    }
+                </datalist>
+                <div class="form-text">Free text, same as on Bank Withdrawals.</div>
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Charge Type</label>
+                <select asp-for="Input.Charge_Type" class="form-select">
+                    <option>Account Ledger Fee</option>
+                    <option>Excise Charges</option>
+                    <option>Maintenance Fee</option>
+                    <option>Other</option>
+                </select>
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Amount (Sh.)</label>
+                <input asp-for="Input.Charge_Amount" type="number" step="0.01" class="form-control" />
+            </div>
+            <div class="col-md-8">
+                <label class="form-label">Notes</label>
+                <input asp-for="Input.Notes" class="form-control" placeholder="e.g. August 2026 statement, ledger fee line item" />
+            </div>
+            <div class="col-12">
+                <button type="submit" class="btn btn-primary">Log Charge</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="d-flex align-items-center gap-2 mb-2">
+    <h5 class="mb-0">Recent Account Charges</h5>
+    @if (Model.Charges.Any())
+    {
+        <span class="badge bg-primary rounded-pill">@Model.Charges.Count()</span>
+    }
+</div>
+
+@if (!Model.Charges.Any())
+{
+    <p class="text-muted">No account charges logged yet.</p>
+}
+else
+{
+    <table class="table table-bordered table-hover align-middle">
+        <thead class="table-light">
+            <tr>
+                <th>Date</th>
+                <th>Bank Account</th>
+                <th>Charge Type</th>
+                <th class="text-end">Amount (Sh.)</th>
+                <th>Notes</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var c in Model.Charges)
+            {
+                <tr>
+                    <td>@c.Charge_Date.ToString("yyyy-MM-dd")</td>
+                    <td>@c.Bank_Account</td>
+                    <td><span class="badge bg-secondary">@c.Charge_Type</span></td>
+                    <td class="text-end">@c.Charge_Amount.ToString("N2")</td>
+                    <td class="text-muted">@c.Notes</td>
+                </tr>
+            }
+        </tbody>
+        <tfoot class="table-light fw-bold">
+            <tr>
+                <td colspan="3">@Model.Charges.Count() charge(s)</td>
+                <td class="text-end">@Model.GrandTotal.ToString("N2")</td>
+                <td></td>
+            </tr>
+        </tfoot>
+    </table>
+}

@@ -1,0 +1,34 @@
+@page "{proposalId:int}"
+@model UASU_VoucherApprovals.Pages.Budgets.EditModel
+
+<h3 class="mb-3">Edit Proposed Budget</h3>
+
+<form method="post" asp-page="/Budgets/Edit" class="row g-3" style="max-width: 640px;">
+    <div class="col-12">
+        <label class="form-label">Budget Code</label>
+        <select asp-for="Input.Budget_Link" class="form-select">
+            @foreach (var b in Model.BudgetCodes)
+            {
+                <option value="@b.Id">@b.Label</option>
+            }
+        </select>
+    </div>
+    <div class="col-md-6">
+        <label class="form-label">Fiscal Year</label>
+        <input asp-for="Input.Fiscal_Year" class="form-control" />
+        <span asp-validation-for="Input.Fiscal_Year" class="text-danger"></span>
+    </div>
+    <div class="col-md-6">
+        <label class="form-label">Proposed Amount</label>
+        <input asp-for="Input.Proposed_Amount" class="form-control" />
+        <span asp-validation-for="Input.Proposed_Amount" class="text-danger"></span>
+    </div>
+    <div class="col-12">
+        <label class="form-label">Notes</label>
+        <input asp-for="Input.Notes" class="form-control" />
+    </div>
+    <div class="col-12">
+        <button type="submit" class="btn btn-primary">Save</button>
+        <a asp-page="/Budgets/Index" asp-route-year="@Model.Input.Fiscal_Year" class="btn btn-outline-secondary">Cancel</a>
+    </div>
+</form>

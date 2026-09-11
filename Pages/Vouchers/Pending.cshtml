@@ -1,0 +1,241 @@
+@page
+@model UASU_VoucherApprovals.Pages.Vouchers.PendingModel
+
+<div class="d-flex align-items-center gap-2 mb-2">
+    <h3 class="mb-0">Pending Vouchers</h3>
+    @if (Model.Vouchers.Any())
+    {
+        <span class="badge bg-primary rounded-pill">@Model.Vouchers.Count() pending</span>
+    }
+</div>
+<p class="text-muted mb-3">Every voucher still awaiting approval. Fix a typo or missing detail before it gets rejected for it &mdash; but only while nobody has approved it yet.</p>
+
+@if (!string.IsNullOrEmpty(Model.StatusMessage))
+{
+    <div class="alert @(Model.StatusIsError ? "alert-danger" : "alert-success")">@Model.StatusMessage</div>
+}
+
+@if (!Model.Vouchers.Any())
+{
+    <p class="text-muted">Nothing pending right now.</p>
+}
+else
+{
+    <table class="table table-bordered align-middle">
+        <thead class="table-light">
+            <tr>
+                <th style="width:2rem;">#</th>
+                <th style="width:1.5rem;"></th>
+                <th>Voucher</th>
+                <th>Date</th>
+                <th>Payee</th>
+                <th class="text-end">Amount</th>
+                <th>Description</th>
+                <th>Approval status</th>
+                <th style="width:110px;">Action</th>
+            </tr>
+        </thead>
+        <tbody>
+            @{ var rowNum = 0; }
+            @foreach (var v in Model.Vouchers)
+            {
+                rowNum++;
+                var rowId = "pv-" + v.Voucher_ID.Replace("/", "-");
+
+                <tr class="@(v.CanEdit ? "row-click" : "")" onclick="@(v.CanEdit ? $"toggleEdit('{rowId}')" : "")">
+                    <td class="text-muted">@rowNum</td>
+                    <td>@if (v.CanEdit) { <span class="chevron" id="@(rowId)-chevron">&#9656;</span> }</td>
+                    <td>@v.Voucher_ID</td>
+                    <td>@v.VoucherDate.ToString("yyyy-MM-dd")</td>
+                    <td>@v.PayeeDisplay</td>
+                    <td class="text-end">@v.Amount.ToString("N2")</td>
+                    <td>@v.Description</td>
+                    <td>
+                        @if (v.ChairmanApproved) { <span class="badge bg-success">Chairman approved</span> }
+                        @if (v.ChapterSecretaryApproved) { <span class="badge bg-success">Chapter Sec. approved</span> }
+                        @if (v.CanEdit) { <span class="text-muted">None yet</span> }
+                    </td>
+                    <td>
+                        @if (v.CanEdit)
+                        {
+                            <button class="btn btn-outline-primary btn-sm" type="button" onclick="event.stopPropagation(); toggleEdit('@rowId')">Edit</button>
+                        }
+                        else
+                        {
+                            <button class="btn btn-outline-secondary btn-sm" type="button" disabled
+                                    title="Already has an approval on file - ask the approver to reject it first if it needs correction">Locked</button>
+                        }
+                    </td>
+                </tr>
+                @if (v.CanEdit)
+                {
+                    <tr id="@rowId" class="hidden-row">
+                        <td></td>
+                        <td></td>
+                        <td colspan="7" class="p-0">
+                            <form method="post" class="edit-panel p-3 border-top">
+                                <input type="hidden" name="VoucherId" value="@v.Voucher_ID" />
+                                <input type="hidden" name="Input.Debt_Link" value="@v.Debt_Link" />
+                                <input type="hidden" name="Input.Supersedes_Voucher_ID" value="" />
+
+                                <div class="row g-3">
+                                    <div class="col-md-3">
+                                        <label class="form-label small text-muted mb-1">Voucher date</label>
+                                        <input name="Input.VoucherDate" type="date" class="form-control form-control-sm"
+                                               value="@v.VoucherDate.ToString("yyyy-MM-dd")" />
+                                    </div>
+                                    <div class="col-md-3 payee-category-field">
+                                        <label class="form-label small text-muted mb-1">Transaction type</label>
+                                        <select name="Input.Transaction_Type" class="form-select form-select-sm">
+                                            <option value="Expense" selected="@(v.Transaction_Type == "Expense")">Expense</option>
+                                            <option value="Income" selected="@(v.Transaction_Type == "Income")">Income</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-3 payee-category-field">
+                                        <label class="form-label small text-muted mb-1">Payee category</label>
+                                        <select name="Input.Payee_Category" class="form-select form-select-sm" onchange="togglePayeeFields(this)">
+                                            <option value="One-Time" selected="@(v.Payee_Category == "One-Time")">One-Time</option>
+                                            <option value="Official" selected="@(v.Payee_Category == "Official")">Official</option>
+                                            <option value="Supplier" selected="@(v.Payee_Category == "Supplier")">Supplier</option>
+                                            <option value="Donor" selected="@(v.Payee_Category == "Donor")">Donor</option>
+                                            <option value="Income Source" selected="@(v.Payee_Category == "Income Source")">Income Source</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label small text-muted mb-1">Amount (Sh.)</label>
+                                        <input name="Input.Amount" type="number" step="0.01" class="form-control form-control-sm" value="@v.Amount" />
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label small text-muted mb-1">Budget code</label>
+                                        <select name="Input.Budget_Link" class="form-select form-select-sm">
+                                            @foreach (var b in Model.BudgetCodes)
+                                            {
+                                                <option value="@b.Id" selected="@(b.Id == v.Budget_Link)">@b.Label</option>
+                                            }
+                                        </select>
+                                    </div>
+
+                                    <div class="col-md-4 payee-field official-field">
+                                        <label class="form-label small text-muted mb-1">Official</label>
+                                        <select name="Input.Official_Link" class="form-select form-select-sm">
+                                            <option value="">-- none --</option>
+                                            @foreach (var o in Model.Officials)
+                                            {
+                                                <option value="@o.Id" selected="@(o.Id == v.Official_Link)">@o.Label</option>
+                                            }
+                                        </select>
+                                    </div>
+                                    <div class="col-md-4 payee-field supplier-field">
+                                        <label class="form-label small text-muted mb-1">Supplier</label>
+                                        <select name="Input.Supplier_Link" class="form-select form-select-sm">
+                                            <option value="">-- none --</option>
+                                            @foreach (var s in Model.Suppliers)
+                                            {
+                                                <option value="@s.Id" selected="@(s.Id == v.Supplier_Link)">@s.Label</option>
+                                            }
+                                        </select>
+                                    </div>
+                                    <div class="col-md-4 payee-field manual-field">
+                                        <label class="form-label small text-muted mb-1">Payee name</label>
+                                        <input name="Input.Manual_Payee_Name" class="form-control form-control-sm" value="@v.Manual_Payee_Name" />
+                                    </div>
+                                    <div class="col-md-4 payee-field manual-field">
+                                        <label class="form-label small text-muted mb-1">Payee address</label>
+                                        <input name="Input.Manual_Payee_Address" class="form-control form-control-sm" value="@v.Manual_Payee_Address" />
+                                    </div>
+
+                                    <div class="col-md-8">
+                                        <label class="form-label small text-muted mb-1">Description</label>
+                                        <input name="Input.Description" class="form-control form-control-sm" value="@v.Description" />
+                                    </div>
+
+                                    <div class="col-12 form-check">
+                                        <input name="Input.Is_Travel_Expense" type="checkbox" value="true" class="form-check-input travel-checkbox"
+                                               onchange="toggleTravelFields(this)" @(v.Is_Travel_Expense ? "checked" : "") />
+                                        <input type="hidden" name="Input.Is_Travel_Expense" value="false" />
+                                        <label class="form-check-label small">This payment is for travelling expenses</label>
+                                    </div>
+
+                                    <div class="col-12 row g-3 travel-fields">
+                                        <div class="col-md-4">
+                                            <label class="form-label small text-muted mb-1">Traveller's name</label>
+                                            <input name="Input.Traveler_Name" class="form-control form-control-sm" value="@v.Traveler_Name" />
+                                        </div>
+                                        <div class="col-md-4">
+                                            <label class="form-label small text-muted mb-1">Date of travel</label>
+                                            <input name="Input.Travel_Date" type="date" class="form-control form-control-sm"
+                                                   value="@(v.Travel_Date?.ToString("yyyy-MM-dd"))" />
+                                        </div>
+                                        <div class="col-md-4">
+                                            <label class="form-label small text-muted mb-1">Mode of transport</label>
+                                            <input name="Input.Travel_Mode" class="form-control form-control-sm" value="@v.Travel_Mode" />
+                                        </div>
+                                        <div class="col-md-4">
+                                            <label class="form-label small text-muted mb-1">Travelled from</label>
+                                            <input name="Input.Travel_From" class="form-control form-control-sm" value="@v.Travel_From" />
+                                        </div>
+                                        <div class="col-md-4">
+                                            <label class="form-label small text-muted mb-1">Travelled to</label>
+                                            <input name="Input.Travel_To" class="form-control form-control-sm" value="@v.Travel_To" />
+                                        </div>
+                                        <div class="col-md-4">
+                                            <label class="form-label small text-muted mb-1">Reason for journey</label>
+                                            <input name="Input.Travel_Reason" class="form-control form-control-sm" value="@v.Travel_Reason" />
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="d-flex gap-2 mt-3">
+                                    <button class="btn btn-primary btn-sm" type="submit">Save correction</button>
+                                    <button class="btn btn-outline-secondary btn-sm" type="button" onclick="toggleEdit('@rowId')">Cancel</button>
+                                </div>
+                            </form>
+                        </td>
+                    </tr>
+                }
+            }
+        </tbody>
+    </table>
+}
+
+<style>
+    .row-click { cursor: pointer; }
+    .row-click:hover { background: rgba(127,127,127,0.06); }
+    .edit-panel { background: rgba(13,110,253,0.04); }
+    .hidden-row { display: none; }
+    .chevron { display: inline-block; transition: transform .15s ease; }
+    .chevron.open { transform: rotate(90deg); }
+</style>
+
+<script>
+    function toggleEdit(id) {
+        var row = document.getElementById(id);
+        row.classList.toggle('hidden-row');
+        var chevron = document.getElementById(id + '-chevron');
+        if (chevron) { chevron.classList.toggle('open'); }
+    }
+
+    // Scoped to the specific row's own edit panel via closest(), rather
+    // than a global element ID, since every pending voucher can have its
+    // own open edit form on the page at once.
+    function togglePayeeFields(select) {
+        var panel = select.closest('.edit-panel');
+        var category = select.value;
+        var isManual = category !== 'Official' && category !== 'Supplier';
+        panel.querySelectorAll('.official-field').forEach(function (el) { el.style.display = category === 'Official' ? '' : 'none'; });
+        panel.querySelectorAll('.supplier-field').forEach(function (el) { el.style.display = category === 'Supplier' ? '' : 'none'; });
+        panel.querySelectorAll('.manual-field').forEach(function (el) { el.style.display = isManual ? '' : 'none'; });
+    }
+
+    function toggleTravelFields(checkbox) {
+        var panel = checkbox.closest('.edit-panel');
+        panel.querySelectorAll('.travel-fields').forEach(function (el) { el.style.display = checkbox.checked ? '' : 'none'; });
+    }
+
+    document.querySelectorAll('.edit-panel').forEach(function (panel) {
+        var payeeSelect = panel.querySelector('select[name="Input.Payee_Category"]');
+        if (payeeSelect) { togglePayeeFields(payeeSelect); }
+        var travelCheckbox = panel.querySelector('.travel-checkbox');
+        if (travelCheckbox) { toggleTravelFields(travelCheckbox); }
+    });
+</script>

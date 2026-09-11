@@ -1,0 +1,215 @@
+@page
+@model UASU_VoucherApprovals.Pages.Reports.DebtsModel
+@using UASU_VoucherApprovals.Pages.Reports
+
+<h3 class="mb-3">Debt Status</h3>
+
+<ul class="nav nav-tabs mb-3">
+    @foreach (var pt in Enum.GetValues<DebtPeriodType>())
+    {
+        <li class="nav-item">
+            <a class="nav-link @(Model.PeriodType == pt ? "active" : "")" href="?periodType=@pt">@pt</a>
+        </li>
+    }
+</ul>
+
+@if (Model.PeriodType != DebtPeriodType.All)
+{
+    <form method="get" class="row g-2 align-items-end mb-3">
+        <input type="hidden" name="periodType" value="@Model.PeriodType" />
+        <div class="col-auto">
+            <label class="form-label mb-0">@Model.PeriodType</label>
+            <select name="period" class="form-select" onchange="this.form.submit()">
+                @foreach (var p in Model.AvailablePeriods)
+                {
+                    <option value="@p" selected="@(Model.Period == p)">@DebtsModel.PeriodLabel(p, Model.PeriodType)</option>
+                }
+            </select>
+        </div>
+    </form>
+}
+
+@if (!Model.Rows.Any())
+{
+    <p class="text-muted">No debts recorded for this period.</p>
+}
+else
+{
+    <div class="row g-3 mb-4">
+        <div class="col-sm-6 col-lg-3">
+            <div class="card text-center h-100">
+                <div class="card-body">
+                    <div class="text-muted small">Total Owed</div>
+                    <div class="fs-4 fw-bold">@Model.Rows.Sum(d => d.Total_Owed).ToString("N2")</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-sm-6 col-lg-3">
+            <div class="card text-center h-100 border-success">
+                <div class="card-body">
+                    <div class="text-muted small">Paid</div>
+                    <div class="fs-4 fw-bold text-success">@Model.Rows.Sum(d => d.TotalAllocated).ToString("N2")</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-sm-6 col-lg-3">
+            <div class="card text-center h-100 border-danger">
+                <div class="card-body">
+                    <div class="text-muted small">Unpaid Balance</div>
+                    <div class="fs-4 fw-bold text-danger">@Model.Rows.Sum(d => d.Balance).ToString("N2")</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-sm-6 col-lg-3">
+            <div class="card text-center h-100">
+                <div class="card-body">
+                    <div class="text-muted small">Debts (Settled / Total)</div>
+                    <div class="fs-4 fw-bold">@Model.SettledRows.Count() / @Model.Rows.Count()</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <a class="btn btn-outline-secondary mb-3" href="?periodType=@Model.PeriodType&period=@Model.Period&handler=ExportCsv">Export CSV</a>
+
+    <div class="accordion mb-3" id="debtGroups">
+        <div class="accordion-item">
+            <h2 class="accordion-header">
+                <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#settledGroup">
+                    <span class="badge bg-success me-2">&nbsp;</span>
+                    Settled
+                    <span class="badge bg-secondary ms-2">@Model.SettledRows.Count()</span>
+                    <span class="ms-auto text-success fw-bold">@Model.SettledRows.Sum(d => d.TotalAllocated).ToString("N2")</span>
+                </button>
+            </h2>
+            <div id="settledGroup" class="accordion-collapse collapse" data-bs-parent="#debtGroups">
+                <div class="accordion-body p-0">
+                    @if (!Model.SettledRows.Any())
+                    {
+                        <p class="text-muted p-3 mb-0">No settled debts in this period.</p>
+                    }
+                    else
+                    {
+                        <table class="table table-bordered table-hover align-middle mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Debt</th>
+                                    <th>Creditor</th>
+                                    <th>Date Incurred</th>
+                                    <th>Description</th>
+                                    <th class="text-end">Owed (Sh.)</th>
+                                    <th class="text-end">Paid (Sh.)</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var d in Model.SettledRows)
+                                {
+                                    <tr>
+                                        <td>@d.Debt_ID</td>
+                                        <td>@d.CreditorName</td>
+                                        <td>@d.Date_Incurred.ToString("yyyy-MM-dd")</td>
+                                        <td>@d.Description</td>
+                                        <td class="text-end">@d.Total_Owed.ToString("N2")</td>
+                                        <td class="text-end">@d.TotalAllocated.ToString("N2")</td>
+                                        <td><span class="badge bg-success">Settled</span></td>
+                                    </tr>
+                                }
+                            </tbody>
+                            <tfoot class="table-light fw-bold">
+                                <tr>
+                                    <td colspan="4">Total</td>
+                                    <td class="text-end">@Model.SettledRows.Sum(d => d.Total_Owed).ToString("N2")</td>
+                                    <td class="text-end">@Model.SettledRows.Sum(d => d.TotalAllocated).ToString("N2")</td>
+                                    <td></td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    }
+                </div>
+            </div>
+        </div>
+
+        <div class="accordion-item">
+            <h2 class="accordion-header">
+                <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#unpaidGroup">
+                    <span class="badge bg-danger me-2">&nbsp;</span>
+                    Unpaid
+                    <span class="badge bg-secondary ms-2">@Model.UnpaidRows.Count()</span>
+                    <span class="ms-auto text-danger fw-bold">@Model.UnpaidRows.Sum(d => d.Balance).ToString("N2")</span>
+                </button>
+            </h2>
+            <div id="unpaidGroup" class="accordion-collapse collapse show" data-bs-parent="#debtGroups">
+                <div class="accordion-body p-0">
+                    @if (!Model.UnpaidRows.Any())
+                    {
+                        <p class="text-muted p-3 mb-0">No unpaid debts in this period.</p>
+                    }
+                    else
+                    {
+                        <table class="table table-bordered table-hover align-middle mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Debt</th>
+                                    <th>Creditor</th>
+                                    <th>Date Incurred</th>
+                                    <th>Description</th>
+                                    <th class="text-end">Owed (Sh.)</th>
+                                    <th class="text-end">Paid (Sh.)</th>
+                                    <th class="text-end">Balance (Sh.)</th>
+                                    <th>Status</th>
+                                    <th>Aging</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var d in Model.UnpaidRows)
+                                {
+                                    <tr>
+                                        <td>@d.Debt_ID</td>
+                                        <td>@d.CreditorName</td>
+                                        <td>@d.Date_Incurred.ToString("yyyy-MM-dd")</td>
+                                        <td>@d.Description</td>
+                                        <td class="text-end">@d.Total_Owed.ToString("N2")</td>
+                                        <td class="text-end">@d.TotalAllocated.ToString("N2")</td>
+                                        <td class="text-end">@d.Balance.ToString("N2")</td>
+                                        <td>
+                                            <span class="badge @(d.SettlementStatus == "Partially Paid" ? "bg-warning text-dark" : "bg-secondary")">@d.SettlementStatus</span>
+                                        </td>
+                                        <td>
+                                            @if (d.AgingBucket == "61-90 days")
+                                            {
+                                                <span class="badge text-dark" style="background-color:#fd7e14;">@d.AgingBucket</span>
+                                            }
+                                            else
+                                            {
+                                                <span class="badge @(d.AgingBucket switch {
+                                                    "0-30 days" => "bg-success",
+                                                    "31-60 days" => "bg-warning text-dark",
+                                                    _ => "bg-danger" })">@d.AgingBucket</span>
+                                            }
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                            <tfoot class="table-light fw-bold">
+                                <tr>
+                                    <td colspan="4">Total</td>
+                                    <td class="text-end">@Model.UnpaidRows.Sum(d => d.Total_Owed).ToString("N2")</td>
+                                    <td class="text-end">@Model.UnpaidRows.Sum(d => d.TotalAllocated).ToString("N2")</td>
+                                    <td class="text-end">@Model.UnpaidRows.Sum(d => d.Balance).ToString("N2")</td>
+                                    <td colspan="2"></td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+<style>
+    /* Bootstrap's accordion-button assumes a single line of text; the
+       count/total badges need to sit at the far right of the same row. */
+    .accordion-button { display: flex; align-items: center; gap: .25rem; }
+</style>

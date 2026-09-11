@@ -1,0 +1,228 @@
+@page
+@model UASU_VoucherApprovals.Pages.Reports.ApprovedVouchersModel
+@using UASU_VoucherApprovals.Services
+
+<div class="d-flex align-items-center gap-2 mb-2">
+    <h3 class="mb-0">Approved Vouchers</h3>
+    @if (Model.Vouchers.Any())
+    {
+        <span class="badge bg-primary rounded-pill">@Model.Vouchers.Count</span>
+    }
+</div>
+<p class="text-muted mb-3">Every voucher that has cleared approval, paid or not. Click a row for the full detail.</p>
+
+<ul class="nav nav-tabs mb-3">
+    @foreach (var p in Enum.GetValues<ReportPeriod>())
+    {
+        <li class="nav-item">
+            <a class="nav-link @(Model.SelectedPeriod == p ? "active" : "")"
+               asp-page="/Reports/ApprovedVouchers" asp-route-period="@p" asp-route-year="@Model.SelectedYear">@p</a>
+        </li>
+    }
+</ul>
+
+<form method="get" class="row g-2 align-items-end mb-3">
+    <input type="hidden" name="period" value="@Model.SelectedPeriod" />
+    <div class="col-auto">
+        <label class="form-label mb-0">Year</label>
+        <select name="year" class="form-select" onchange="this.form.submit()">
+            @for (var y = DateTime.Today.Year; y >= DateTime.Today.Year - 6; y--)
+            {
+                <option value="@y" selected="@(Model.SelectedYear == y)">@y</option>
+            }
+        </select>
+    </div>
+
+    @if (Model.SelectedPeriod == ReportPeriod.Monthly)
+    {
+        <div class="col-auto">
+            <label class="form-label mb-0">Month</label>
+            <select name="sub" class="form-select" onchange="this.form.submit()">
+                @for (var m = 1; m <= 12; m++)
+                {
+                    <option value="@m" selected="@(Model.SelectedSub == m)">@System.Globalization.CultureInfo.InvariantCulture.DateTimeFormat.GetMonthName(m)</option>
+                }
+            </select>
+        </div>
+    }
+    else if (Model.SelectedPeriod == ReportPeriod.Quarterly)
+    {
+        <div class="col-auto">
+            <label class="form-label mb-0">Quarter</label>
+            <select name="sub" class="form-select" onchange="this.form.submit()">
+                @for (var q = 1; q <= 4; q++)
+                {
+                    <option value="@q" selected="@(Model.SelectedSub == q)">Q@(q)</option>
+                }
+            </select>
+        </div>
+    }
+    else if (Model.SelectedPeriod == ReportPeriod.HalfYearly)
+    {
+        <div class="col-auto">
+            <label class="form-label mb-0">Half</label>
+            <select name="sub" class="form-select" onchange="this.form.submit()">
+                <option value="1" selected="@(Model.SelectedSub == 1)">H1 (Jan&ndash;Jun)</option>
+                <option value="2" selected="@(Model.SelectedSub == 2)">H2 (Jul&ndash;Dec)</option>
+            </select>
+        </div>
+    }
+
+    <div class="col-auto ms-auto">
+        <a class="btn btn-outline-secondary" asp-page="/Reports/ApprovedVouchers" asp-page-handler="ExportCsv"
+           asp-route-period="@Model.SelectedPeriod" asp-route-year="@Model.SelectedYear" asp-route-sub="@Model.SelectedSub">Export CSV</a>
+    </div>
+</form>
+
+<div class="d-flex gap-3 mb-3" style="font-size:.85rem;">
+    <span class="text-muted"><span class="badge bg-success">Paid</span> already disbursed</span>
+    <span class="text-muted"><span class="badge bg-warning text-dark">Unpaid</span> approved, awaiting payment</span>
+    <span class="text-muted"><span class="badge bg-secondary">Legacy</span> predates the approval workflow</span>
+</div>
+
+@if (!Model.Vouchers.Any())
+{
+    <p class="text-muted">No approved vouchers for @Model.PeriodLabel.</p>
+}
+else
+{
+    <table class="table table-bordered align-middle">
+        <thead class="table-light">
+            <tr>
+                <th style="width:2rem;">#</th>
+                <th style="width:1.5rem;"></th>
+                <th>Voucher</th>
+                <th>Date</th>
+                <th>Type</th>
+                <th>Payee</th>
+                <th class="text-end">Amount</th>
+                <th>Description</th>
+                <th>Status</th>
+            </tr>
+        </thead>
+        <tbody>
+            @{ var rowNum = 0; }
+            @foreach (var v in Model.Vouchers)
+            {
+                rowNum++;
+                var rowId = "av-" + v.Voucher_ID.Replace("/", "-");
+                var approvals = Model.ApprovalsByVoucher[v.Voucher_ID].ToList();
+                var chairman = approvals.FirstOrDefault(a => a.ApproverRole == "Chairman");
+                var chapterSec = approvals.FirstOrDefault(a => a.ApproverRole == "Chapter Secretary");
+                var payments = Model.PaymentsByVoucher[v.Voucher_ID].ToList();
+
+                <tr class="row-click" onclick="toggleDetail('@rowId')">
+                    <td class="text-muted">@rowNum</td>
+                    <td><span class="chevron" id="@(rowId)-chevron">&#9656;</span></td>
+                    <td>@v.Voucher_ID</td>
+                    <td>@v.VoucherDate.ToString("yyyy-MM-dd")</td>
+                    <td>@v.Transaction_Type</td>
+                    <td>@v.PayeeDisplay</td>
+                    <td class="text-end">@v.Amount.ToString("N2")</td>
+                    <td>@v.Description</td>
+                    <td>
+                        @if (v.Current_Status == "Paid") { <span class="badge bg-success">Paid</span> }
+                        else { <span class="badge bg-warning text-dark">Unpaid</span> }
+                        @if (v.Is_Legacy) { <span class="badge bg-secondary">Legacy</span> }
+                    </td>
+                </tr>
+                <tr id="@rowId" class="hidden-row">
+                    <td></td>
+                    <td></td>
+                    <td colspan="7" class="p-0">
+                        <div class="detail-panel p-3 border-top">
+                            <div class="row">
+                                <div class="col-md-3">
+                                    <dl class="mb-0"><dt>Payee category</dt><dd>@v.Payee_Category</dd></dl>
+                                    <dl class="mb-0"><dt>Budget category</dt><dd>@(v.Budget_Category ?? "—")</dd></dl>
+                                </div>
+                                <div class="col-md-3">
+                                    <dl class="mb-0"><dt>Travel expense</dt><dd>@(v.Is_Travel_Expense ? "Yes" : "No")</dd></dl>
+                                    @if (v.Is_Travel_Expense)
+                                    {
+                                        <dl class="mb-0"><dt>Travel</dt><dd>@v.Traveler_Name &middot; @v.Travel_From &rarr; @v.Travel_To @(v.Travel_Date.HasValue ? "(" + v.Travel_Date.Value.ToString("yyyy-MM-dd") + ")" : "")</dd></dl>
+                                    }
+                                </div>
+                                <div class="col-md-3">
+                                    @if (v.Is_Legacy)
+                                    {
+                                        <dl class="mb-0"><dt>Approval</dt><dd class="text-muted">Predates the approval workflow (legacy) &mdash; no Chairman/Chapter Secretary decision is on file, and none is required.</dd></dl>
+                                    }
+                                    else if (v.Transaction_Type == "Income")
+                                    {
+                                        <dl class="mb-0"><dt>Approval</dt><dd class="text-muted">Income is recorded directly &mdash; no Chairman/Chapter Secretary decision is required.</dd></dl>
+                                    }
+                                    else
+                                    {
+                                        <dl class="mb-0">
+                                            <dt>Chairman</dt>
+                                            <dd>
+                                                @if (chairman is not null)
+                                                {
+                                                    <span class="badge @(chairman.Approval_Status == "Approved" ? "bg-success" : "bg-danger")">@chairman.Approval_Status</span>
+                                                    <span class="text-muted"> @chairman.Approval_Date.ToString("yyyy-MM-dd")</span>
+                                                    @if (!string.IsNullOrWhiteSpace(chairman.Comments)) { <div class="small text-muted">&ldquo;@chairman.Comments&rdquo;</div> }
+                                                }
+                                                else { <span class="text-muted">&mdash;</span> }
+                                            </dd>
+                                        </dl>
+                                        <dl class="mb-0">
+                                            <dt>Chapter Secretary</dt>
+                                            <dd>
+                                                @if (chapterSec is not null)
+                                                {
+                                                    <span class="badge @(chapterSec.Approval_Status == "Approved" ? "bg-success" : "bg-danger")">@chapterSec.Approval_Status</span>
+                                                    <span class="text-muted"> @chapterSec.Approval_Date.ToString("yyyy-MM-dd")</span>
+                                                    @if (!string.IsNullOrWhiteSpace(chapterSec.Comments)) { <div class="small text-muted">&ldquo;@chapterSec.Comments&rdquo;</div> }
+                                                }
+                                                else { <span class="text-muted">&mdash;</span> }
+                                            </dd>
+                                        </dl>
+                                    }
+                                </div>
+                                <div class="col-md-3">
+                                    @if (!payments.Any())
+                                    {
+                                        <dl class="mb-0"><dt>Payment</dt><dd class="text-warning">Not yet paid</dd></dl>
+                                    }
+                                    else
+                                    {
+                                        foreach (var pmt in payments)
+                                        {
+                                            <dl class="mb-0"><dt>Payment</dt><dd>@pmt.Payment_ID &middot; @pmt.Payment_Date.ToString("yyyy-MM-dd") &middot; @pmt.Payment_Mode &middot; Sh. @pmt.Allocated_Amount.ToString("N2")</dd></dl>
+                                        }
+                                    }
+                                </div>
+                            </div>
+                        </div>
+                    </td>
+                </tr>
+            }
+        </tbody>
+        <tfoot class="table-light fw-bold">
+            <tr>
+                <td colspan="6">@Model.Vouchers.Count vouchers(s) &middot; @Model.PeriodLabel</td>
+                <td class="text-end">@Model.Vouchers.Sum(v => v.Amount).ToString("N2")</td>
+                <td colspan="2"></td>
+            </tr>
+        </tfoot>
+    </table>
+}
+
+<style>
+    .row-click { cursor: pointer; }
+    .row-click:hover { background: rgba(127,127,127,0.06); }
+    .detail-panel { background: rgba(25,135,84,0.05); }
+    .hidden-row { display: none; }
+    .chevron { display: inline-block; transition: transform .15s ease; }
+    .chevron.open { transform: rotate(90deg); }
+    .detail-panel dt { font-size: .78rem; text-transform: uppercase; letter-spacing: .02em; color: #6c757d; font-weight: 500; }
+    .detail-panel dd { margin-bottom: .5rem; }
+</style>
+
+<script>
+    function toggleDetail(id) {
+        document.getElementById(id).classList.toggle('hidden-row');
+        document.getElementById(id + '-chevron').classList.toggle('open');
+    }
+</script>

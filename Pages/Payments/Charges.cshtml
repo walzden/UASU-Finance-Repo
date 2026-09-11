@@ -1,0 +1,55 @@
+@page
+@model UASU_VoucherApprovals.Pages.Payments.ChargesModel
+
+<h3 class="mb-3">Log a Payment Charge</h3>
+<p class="text-muted">
+    For the M-PESA transaction charge on a payment. The dropdown only lists M-Pesa payments that don't
+    already have a charge logged. If it came from cash drawn via a specific withdrawal, select that
+    withdrawal too — but only a withdrawal that actually funded the chosen payment will be accepted.
+</p>
+
+@if (!string.IsNullOrEmpty(Model.StatusMessage))
+{
+    <div class="alert @(Model.StatusIsError ? "alert-danger" : "alert-success")">@Model.StatusMessage</div>
+}
+
+<form method="post" asp-page="/Payments/Charges" class="row g-3" style="max-width: 640px;">
+    <div class="col-12">
+        <label class="form-label">Payment</label>
+        <select asp-for="Input.Payment_ID" class="form-select">
+            @foreach (var p in Model.Payments)
+            {
+                <option value="@p.Id">@p.Label</option>
+            }
+        </select>
+    </div>
+    <div class="col-12">
+        <label class="form-label">Funded by Withdrawal (optional)</label>
+        <select asp-for="Input.Withdrawal_ID" class="form-select">
+            <option value="">-- not from a withdrawal --</option>
+            @foreach (var w in Model.Withdrawals)
+            {
+                <option value="@w.Id">@w.Label</option>
+            }
+        </select>
+    </div>
+    <div class="col-md-6">
+        <label class="form-label">Charge Type</label>
+        <select asp-for="Input.Charge_Type" class="form-select">
+            <option>Bank Fee</option>
+            <option>M-PESA Fee</option>
+            <option>Other</option>
+        </select>
+    </div>
+    <div class="col-md-6">
+        <label class="form-label">Amount (Sh.)</label>
+        <input asp-for="Input.Charge_Amount" type="number" step="0.01" class="form-control" />
+    </div>
+    <div class="col-12">
+        <label class="form-label">Notes</label>
+        <textarea asp-for="Input.Notes" class="form-control" rows="2"></textarea>
+    </div>
+    <div class="col-12">
+        <button type="submit" class="btn btn-primary">Log Charge</button>
+    </div>
+</form>

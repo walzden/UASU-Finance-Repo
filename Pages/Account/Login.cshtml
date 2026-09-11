@@ -1,0 +1,132 @@
+@page
+@model UASU_VoucherApprovals.Pages.Account.LoginModel
+@{
+    // No top navbar on this page by design - it's a full-bleed
+    // split-screen landing layout (like the reference design), not a
+    // page nested inside the app chrome the way every other page is.
+    Layout = null;
+}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Sign In - MMU UASU Finance App</title>
+    <link rel="icon" type="image/x-icon" href="~/favicon.ico" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" />
+    <link rel="stylesheet" href="~/css/uasu-theme.css" />
+    <style>
+        /* Layout/structure only - the brand accent (button, focus ring,
+           nav bar) lives in wwwroot/css/uasu-theme.css so it stays in
+           sync with the rest of the app rather than duplicated here. */
+        html, body { height: 100%; }
+        body {
+            margin: 0;
+            background: #f1f2f7;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            padding: 2rem 1rem;
+        }
+        .login-card {
+            display: flex;
+            width: 100%;
+            max-width: 900px;
+            background: #fff;
+            border-radius: 1rem;
+            overflow: hidden;
+            box-shadow: 0 1rem 3rem rgba(0,0,0,.12);
+        }
+        .login-hero {
+            flex: 1 1 50%;
+            background: #26265C;
+            color: #fff;
+            padding: 2.5rem 2.25rem;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+        .login-hero .logo-badge {
+            width: 52px; height: 52px; border-radius: .65rem;
+            background: #fff; display: flex; align-items: center; justify-content: center;
+            padding: 5px;
+        }
+        .login-hero .logo-badge img { max-width: 100%; max-height: 100%; object-fit: contain; }
+        .login-hero h1 { font-size: 1.6rem; }
+        .login-hero ul { list-style: none; padding-left: 0; }
+        .login-hero ul li { display: flex; align-items: center; gap: .65rem; margin-bottom: .75rem; color: #dcdcf5; font-size: .95rem; }
+        .login-hero ul li .bullet {
+            width: 18px; height: 18px; border: 2px solid rgba(255,255,255,.45); border-radius: 50%; flex: none;
+        }
+        .login-form-panel {
+            flex: 1 1 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 2.5rem 2.25rem;
+        }
+        .login-form-panel > div { width: 100%; max-width: 320px; }
+        @@media (max-width: 767.98px) {
+            .login-card { flex-direction: column; max-width: 420px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="login-card">
+        <div class="login-hero">
+            <div class="d-flex gap-2 mb-3">
+                <div class="logo-badge">
+                    <img src="~/images/mmu-logo.jpg" alt="MMU logo"
+                         onerror="this.onerror=null; this.src='/images/mmu-logo-placeholder.svg';" />
+                </div>
+                <div class="logo-badge">
+                    <img src="~/images/uasu-Logo.jpg" alt="UASU logo"
+                         onerror="this.onerror=null; this.src='/images/uasu-logo-placeholder.svg';" />
+                </div>
+            </div>
+            <h1 class="fw-bold mb-2">MMU UASU Finance App</h1>
+            <p class="mb-3" style="color:#dcdcf5; font-size:.9rem;">
+                Manage vouchers, approvals, payments, and budgets for the Multimedia University of Kenya
+                UASU chapter - all in one secure finance system.
+            </p>
+            <ul>
+                <li><span class="bullet"></span> Voucher Creation &amp; Approvals</li>
+                <li><span class="bullet"></span> Payment Recording &amp; Acknowledgement</li>
+                <li><span class="bullet"></span> Budget Planning &amp; Performance</li>
+                <li><span class="bullet"></span> Financial Reports &amp; Debt Tracking</li>
+            </ul>
+        </div>
+        <div class="login-form-panel">
+            <div>
+                <h2 class="fw-bold mb-1">Sign In</h2>
+                <p class="text-muted mb-4">Enter your credentials to access your account</p>
+
+                @if (!string.IsNullOrEmpty(Model.StatusMessage))
+                {
+                    <div class="alert alert-success">@Model.StatusMessage</div>
+                }
+                @if (!string.IsNullOrEmpty(Model.ErrorMessage))
+                {
+                    <div class="alert alert-danger">@Model.ErrorMessage</div>
+                }
+
+                <form method="post" asp-page="/Account/Login">
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Username</label>
+                        <input asp-for="Username" class="form-control form-control-lg" placeholder="Enter your username" autofocus required />
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label fw-semibold">Password</label>
+                        <input asp-for="Password" type="password" class="form-control form-control-lg" placeholder="Enter your password" required />
+                    </div>
+                    <div class="text-end mb-4">
+                        <a asp-page="/Account/ForgotPassword" class="small">Forgot Password?</a>
+                    </div>
+                    <button type="submit" class="btn btn-primary btn-lg w-100">Sign In</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

@@ -1,0 +1,222 @@
+@page
+@model UASU_VoucherApprovals.Pages.Reports.WithdrawalBreakdownModel
+
+<h3 class="mb-3">Withdrawal Breakdown</h3>
+
+@if (!Model.Withdrawals.Any())
+{
+    <p class="text-muted">No withdrawals recorded yet.</p>
+}
+else
+{
+    <div class="row g-3 mb-4">
+        <div class="col-sm-6 col-lg-3">
+            <div class="card text-center h-100">
+                <div class="card-body">
+                    <div class="text-muted small">Withdrawn</div>
+                    <div class="fs-4 fw-bold">@Model.Withdrawals.Sum(w => w.Amount).ToString("N2")</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-sm-6 col-lg-3">
+            <div class="card text-center h-100 border-success">
+                <div class="card-body">
+                    <div class="text-muted small">Allocated to Payments</div>
+                    <div class="fs-4 fw-bold text-success">@Model.Withdrawals.Sum(w => w.Allocated).ToString("N2")</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-sm-6 col-lg-3">
+            <div class="card text-center h-100">
+                <div class="card-body">
+                    <div class="text-muted small">Bank/M-Pesa Charges</div>
+                    <div class="fs-4 fw-bold">@Model.Withdrawals.Sum(w => w.Charges).ToString("N2")</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-sm-6 col-lg-3">
+            <div class="card text-center h-100 border-warning">
+                <div class="card-body">
+                    <div class="text-muted small">Still Unallocated</div>
+                    <div class="fs-4 fw-bold text-warning">@Model.Withdrawals.Sum(w => w.Remaining).ToString("N2")</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <a class="btn btn-outline-secondary mb-3" href="?handler=ExportXlsx">Export Excel (Summary + Detail)</a>
+
+    <table class="table table-bordered table-hover align-middle">
+        <thead class="table-light">
+            <tr>
+                <th style="width:2rem;"></th>
+                <th>Withdrawal</th>
+                <th>Description</th>
+                <th class="text-end">Amount (Sh.)</th>
+                <th class="text-end">Allocated (Sh.)</th>
+                <th class="text-end">Charges (Sh.)</th>
+                <th class="text-end">Remaining (Sh.)</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var w in Model.Withdrawals)
+            {
+                var sectionId = "wd-" + w.Withdrawal_ID;
+                var startsOpen = w.Remaining != 0;
+                var payments = Model.PaymentsByWithdrawal[w.Withdrawal_ID].ToList();
+                var categories = Model.BudgetCategoriesByWithdrawal.TryGetValue(w.Withdrawal_ID, out var cats) ? cats : new List<string>();
+
+                <tr style="cursor:pointer;" onclick="toggleRow('@sectionId', this)">
+                    <td class="text-center" id="@(sectionId)-arrow">@(startsOpen ? "▾" : "▸")</td>
+                    <td>
+                        @w.Withdrawal_ID &middot; @w.Withdrawal_Date.ToString("yyyy-MM-dd")
+                        @if (!string.IsNullOrEmpty(w.Reference_No)) { <span class="text-muted"> (@w.Reference_No)</span> }
+                        <div class="text-muted small">@w.Bank_Account</div>
+                    </td>
+                    <td>
+                        @if (!categories.Any())
+                        {
+                            <span class="text-muted small">No vouchers attributed to this withdrawal yet</span>
+                        }
+                        else
+                        {
+                            foreach (var cat in categories)
+                            {
+                                <span class="badge bg-light text-dark border me-1 mb-1">@cat</span>
+                            }
+                        }
+                    </td>
+                    <td class="text-end">@w.Amount.ToString("N2")</td>
+                    <td class="text-end">@w.Allocated.ToString("N2")</td>
+                    <td class="text-end">@w.Charges.ToString("N2")</td>
+                    <td class="text-end @(w.Remaining < 0 ? "text-danger" : w.Remaining > 0 ? "text-warning" : "text-success")">@w.Remaining.ToString("N2")</td>
+                </tr>
+                <tr id="@sectionId" style="display:@(startsOpen ? "" : "none");">
+                    <td></td>
+                    <td colspan="6" class="p-0">
+                        @if (!payments.Any())
+                        {
+                            <p class="text-muted small m-3 mb-3">No payments recorded against this withdrawal yet.</p>
+                        }
+                        else
+                        {
+                            <table class="table table-sm mb-0" style="table-layout:fixed;width:100%;background-color:var(--bs-tertiary-bg);">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th class="ps-4" style="width:55%;">Payment funded from this withdrawal</th>
+                                        <th class="text-end" style="width:22%;">From this withdrawal (Sh.)</th>
+                                        <th class="text-end" style="width:23%;">Payment total (Sh.)</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var p in payments)
+                                    {
+                                        var key = (w.Withdrawal_ID, p.Payment_ID);
+                                        var vouchers = Model.VouchersForWithdrawalPayment.TryGetValue(key, out var vList) ? vList : new List<WithdrawalPaymentVoucherRow>();
+                                        var isUnattributed = Model.UnattributedPayments.Contains(p.Payment_ID);
+                                        <tr>
+                                            <td class="ps-4">
+                                                @p.Payment_ID &middot; @p.Payment_Date.ToString("yyyy-MM-dd") &middot; @p.Payment_Mode
+                                                @if (!string.IsNullOrEmpty(p.Description)) { <div class="text-muted small">@p.Description</div> }
+                                            </td>
+                                            <td class="text-end">
+                                                @p.FundedFromThisWithdrawal.ToString("N2")
+                                                @if (p.WithdrawalCount > 1)
+                                                {
+                                                    <span class="badge bg-secondary ms-1" title="Also funded from @(p.WithdrawalCount - 1) other withdrawal(s)">split &middot; @p.WithdrawalCount withdrawals</span>
+                                                }
+                                            </td>
+                                            <td class="text-end">@p.Amount_Paid.ToString("N2")</td>
+                                        </tr>
+                                        <tr>
+                                            <td colspan="3" class="p-0">
+                                                @if (isUnattributed)
+                                                {
+                                                    <p class="text-warning small m-2 ms-5 mb-2">
+                                                        Could not confidently match this withdrawal's share to specific vouchers - showing this payment's full voucher list instead.
+                                                    </p>
+                                                }
+                                                @if (!vouchers.Any())
+                                                {
+                                                    <p class="text-muted small m-2 ms-5 mb-2">No voucher attributed to this withdrawal's share of this payment.</p>
+                                                }
+                                                else
+                                                {
+                                                    string? previousPayee = null;
+                                                    var payeeStripe = false;
+                                                    <table class="table table-sm mb-0" style="table-layout:fixed;width:100%;background-color:var(--bs-secondary-bg);">
+                                                        <colgroup>
+                                                            <col style="width:27%;" />
+                                                            <col style="width:18%;" />
+                                                            <col style="width:20%;" />
+                                                            <col style="width:17.5%;" />
+                                                            <col style="width:17.5%;" />
+                                                        </colgroup>
+                                                        <thead class="table-light">
+                                                            <tr>
+                                                                <th class="ps-5">Voucher</th>
+                                                                <th>Payee</th>
+                                                                <th>Description</th>
+                                                                <th class="text-end">Voucher amount (Sh.)</th>
+                                                                <th class="text-end">Paid from this payment (Sh.)</th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody>
+                                                            @foreach (var v in vouchers)
+                                                            {
+                                                                if (v.PayeeDisplay != previousPayee)
+                                                                {
+                                                                    payeeStripe = !payeeStripe;
+                                                                    previousPayee = v.PayeeDisplay;
+                                                                }
+                                                                <tr class="@(payeeStripe ? "table-light" : "")">
+                                                                    <td class="ps-5">@v.Voucher_ID &middot; @v.VoucherDate.ToString("yyyy-MM-dd")</td>
+                                                                    <td class="text-truncate">@v.PayeeDisplay</td>
+                                                                    <td class="text-truncate">@v.Description</td>
+                                                                    <td class="text-end">@v.VoucherAmount.ToString("N2")</td>
+                                                                    <td class="text-end">@v.AllocatedFromThisPayment.ToString("N2")</td>
+                                                                </tr>
+                                                            }
+                                                        </tbody>
+                                                        <tfoot>
+                                                            <tr class="fw-bold">
+                                                                <td class="ps-5" colspan="3">Total</td>
+                                                                <td class="text-end">@vouchers.Sum(v => v.VoucherAmount).ToString("N2")</td>
+                                                                <td class="text-end">@vouchers.Sum(v => v.AllocatedFromThisPayment).ToString("N2")</td>
+                                                            </tr>
+                                                        </tfoot>
+                                                    </table>
+                                                }
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        }
+                    </td>
+                </tr>
+            }
+        </tbody>
+        <tfoot class="table-light fw-bold">
+            <tr>
+                <td></td>
+                <td>@Model.Withdrawals.Count() withdrawal(s)</td>
+                <td></td>
+                <td class="text-end">@Model.Withdrawals.Sum(w => w.Amount).ToString("N2")</td>
+                <td class="text-end">@Model.Withdrawals.Sum(w => w.Allocated).ToString("N2")</td>
+                <td class="text-end">@Model.Withdrawals.Sum(w => w.Charges).ToString("N2")</td>
+                <td class="text-end">@Model.Withdrawals.Sum(w => w.Remaining).ToString("N2")</td>
+            </tr>
+        </tfoot>
+    </table>
+
+    <script>
+        function toggleRow(id, headerRow) {
+            var section = document.getElementById(id);
+            var arrow = document.getElementById(id + '-arrow');
+            var isHidden = section.style.display === 'none';
+            section.style.display = isHidden ? '' : 'none';
+            arrow.textContent = isHidden ? '▾' : '▸';
+        }
+    </script>
+}

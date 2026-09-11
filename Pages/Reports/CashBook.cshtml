@@ -1,0 +1,227 @@
+@page
+@model UASU_VoucherApprovals.Pages.Reports.CashBookModel
+
+<style>
+    /* Portrait (the app-wide default from uasu-theme.css) now that the
+       .container width fix lets content actually fill the page - a
+       slightly smaller font still helps 9 columns sit comfortably.
+       Only applies when actually printing. */
+    @@media print {
+        /* Bootstrap's default table/div margins add up to real space
+           once several tables sit stacked one after another - trimming
+           them so the Grand Total table only needs its own actual
+           height (not extra breathing room) to fit in what's left on
+           the last page. */
+        table { font-size: 10px; table-layout: fixed; margin-bottom: 0 !important; }
+        .cashbook-page { margin-bottom: 0 !important; }
+        th, td { padding: .25rem .35rem !important; }
+        /* Fixed column widths mean long text (a budget category name,
+           etc.) would otherwise wrap onto a second line, which throws
+           off the rows-per-page estimate below - force every data cell
+           to stay one line, truncating with an ellipsis instead. Matches
+           the physical book's own convention anyway (one line per entry).
+           The Date column is exempted - "dd/MM/yy" is always short and
+           always meaningful, nothing about it should ever be clipped. */
+        td { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        td.cb-date { overflow: visible; text-overflow: clip; }
+        tr { break-inside: avoid; }
+        /* Explicit class, set only on non-final chunks in the loop below -
+           NOT :not(:last-child), which checks against every sibling in the
+           DOM (including the Grand Total block and buttons after the loop),
+           not just other .cashbook-page elements. That mismatch was forcing
+           a break after the true last page too, regardless of how much
+           room was reserved for what followed it. */
+        .cashbook-page-break { break-after: page; }
+    }
+</style>
+
+@{
+    // Print-only Form V letterhead, repeated at the top of every
+    // chunk/page below (not just once) - a plain <div> doesn't repeat
+    // across physical pages the way a table's <thead> does, so this
+    // has to be rendered again per chunk to appear on every printed
+    // page. Invisible on screen (d-none), shown only when printing
+    // (d-print-block is a real Bootstrap utility).
+    async Task RenderPrintHeaderAsync()
+    {
+        <div class="d-none d-print-block mb-3">
+            <div class="d-flex align-items-center gap-3 mb-2">
+                <img src="~/images/uasu-Logo.jpg" alt="UASU logo" style="height:70px;"
+                     onerror="this.onerror=null; this.src='/images/uasu-logo-placeholder.svg';" />
+                <div class="text-center flex-grow-1">
+                    <h4 class="fw-bold mb-0">UNIVERSITIES' ACADEMIC STAFF UNION</h4>
+                    <h5 class="mb-0">CASH BOOK</h5>
+                </div>
+            </div>
+            <div class="d-flex justify-content-between border-top border-bottom py-1">
+                <span><strong>FORM V</strong></span>
+                <span>NO. ______________</span>
+            </div>
+            <div class="d-flex justify-content-between py-1 mb-2">
+                <span><strong>NAME OF BRANCH:</strong> Multimedia University Chapter</span>
+                <span><strong>DATE:</strong> Jan - Dec @Model.SelectedYear</span>
+            </div>
+        </div>
+        await Task.CompletedTask;
+    }
+
+    // Shared column widths so the Grand Total table (a separate <table>
+    // with no data rows of its own to size against) lines up exactly
+    // with the last page's data table above it - without this, each
+    // <table> sizes its columns independently from its own content and
+    // the two drift out of alignment. table-layout: fixed (in the
+    // <style> block) makes browsers actually honor these widths instead
+    // of just treating them as a hint.
+    async Task RenderColGroupAsync()
+    {
+        <colgroup>
+            <col style="width:9%" /><col style="width:19%" /><col style="width:11%" />
+            <col style="width:10%" /><col style="width:10%" /><col style="width:10%" /><col style="width:10%" />
+            <col style="width:10.5%" /><col style="width:10.5%" />
+        </colgroup>
+        await Task.CompletedTask;
+    }
+}
+
+<h3 class="mb-3 d-print-none">Cash Book</h3>
+<p class="text-muted d-print-none">Mirrors the UASU Form V cash book - Money Received and Money Paid split into Cash and Bank, in chronological order, with a running balance carried on both.</p>
+
+<form method="get" class="row g-2 align-items-end mb-3 d-print-none">
+    <div class="col-auto">
+        <label class="form-label mb-0">Year</label>
+        <select name="year" class="form-select" onchange="this.form.submit()">
+            @foreach (var y in Model.AvailableYears)
+            {
+                <option value="@y" selected="@(Model.SelectedYear == y)">@y</option>
+            }
+            @if (!Model.AvailableYears.Contains(Model.SelectedYear))
+            {
+                <option value="@Model.SelectedYear" selected>@Model.SelectedYear</option>
+            }
+        </select>
+    </div>
+    @if (Model.Rows.Any())
+    {
+        <div class="col-auto ms-auto">
+            <button type="button" class="btn btn-primary" onclick="window.print()">Print / Save as PDF</button>
+        </div>
+    }
+</form>
+
+@{
+    // A browser print has no way to report back which rows actually
+    // landed on which physical page, so we fix the page boundaries
+    // ourselves: split into chunks sized to fit one A4 portrait page
+    // (letterhead + table header all included), and force a page break
+    // between chunks so what's on screen matches what prints.
+    //
+    // The LAST chunk deliberately uses a smaller budget than every
+    // other page - it needs to leave room for the Grand Total block
+    // that follows it, where non-final pages don't. Uniformly shrinking
+    // every page to make room "just in case" wastes space on pages that
+    // don't need it; this only reserves room where it's actually needed.
+    const int rowsPerPage = 32;
+    const int lastPageRowBudget = 20;
+
+    var allRows = Model.Rows.ToList();
+    var pages = new List<CashBookRow[]>();
+    int fullPages = allRows.Count > lastPageRowBudget
+        ? (int)Math.Ceiling((allRows.Count - lastPageRowBudget) / (double)rowsPerPage)
+        : 0;
+    int idx = 0;
+    for (var f = 0; f < fullPages; f++)
+    {
+        pages.Add(allRows.Skip(idx).Take(rowsPerPage).ToArray());
+        idx += rowsPerPage;
+    }
+    if (idx < allRows.Count)
+        pages.Add(allRows.Skip(idx).ToArray());
+}
+
+@if (!Model.Rows.Any())
+{
+    <p class="text-muted">No cash book entries for @Model.SelectedYear.</p>
+}
+else
+{
+    @for (var p = 0; p < pages.Count; p++)
+    {
+        var pageRows = pages[p];
+        var isLastPage = p == pages.Count - 1;
+        await RenderPrintHeaderAsync();
+        <div class="cashbook-page @(isLastPage ? "" : "cashbook-page-break")" style="overflow-x:auto;">
+            <table class="table table-bordered table-hover align-middle table-sm">
+                @{ await RenderColGroupAsync(); }
+                <thead class="table-light">
+                    <tr>
+                        <th rowspan="2" class="align-middle">Date</th>
+                        <th rowspan="2" class="align-middle">Item</th>
+                        <th rowspan="2" class="align-middle">Voucher/<br />Receipt No.</th>
+                        <th colspan="2" class="text-center">Money Received</th>
+                        <th colspan="2" class="text-center">Money Paid</th>
+                        <th colspan="2" class="text-center">Balance</th>
+                    </tr>
+                    <tr>
+                        <th class="text-end">Cash (Sh.)</th>
+                        <th class="text-end">Bank (Sh.)</th>
+                        <th class="text-end">Cash (Sh.)</th>
+                        <th class="text-end">Bank (Sh.)</th>
+                        <th class="text-end">Cash (Sh.)</th>
+                        <th class="text-end">Bank (Sh.)</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var r in pageRows)
+                    {
+                        <tr>
+                            <td class="cb-date">@r.EntryDate.ToString("dd/MM/yy")</td>
+                            <td>@r.Item</td>
+                            <td>@(r.Item == "Cash Withdrawal" ? r.VoucherOrReceiptNo : UASU_VoucherApprovals.Pages.Reports.CashBookModel.ShortVoucherNo(r.VoucherOrReceiptNo))</td>
+                            <td class="text-end">@(r.ReceivedCash > 0 ? r.ReceivedCash.ToString("N2") : "")</td>
+                            <td class="text-end">@(r.ReceivedBank > 0 ? r.ReceivedBank.ToString("N2") : "")</td>
+                            <td class="text-end">@(r.PaidCash > 0 ? r.PaidCash.ToString("N2") : "")</td>
+                            <td class="text-end">@(r.PaidBank > 0 ? r.PaidBank.ToString("N2") : "")</td>
+                            <td class="text-end">@r.RunningCashBalance.ToString("N2")</td>
+                            <td class="text-end">@r.RunningBankBalance.ToString("N2")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+
+    var lastRow = Model.Rows.Last();
+    var lastDate = lastRow.EntryDate.ToString("dd-MMM-yy");
+    var totalReceived = Model.Rows.Sum(r => r.ReceivedCash + r.ReceivedBank);
+    var totalPaid = Model.Rows.Sum(r => r.PaidCash + r.PaidBank);
+
+    <div class="ms-auto" style="max-width:480px;">
+        <table class="table table-bordered table-sm mb-1">
+            <tbody>
+                <tr class="table-light fw-bold">
+                    <td>TOTAL VALUE</td>
+                    <td class="text-end">@totalReceived.ToString("N2")</td>
+                    <td class="text-end">@totalPaid.ToString("N2")</td>
+                </tr>
+                <tr>
+                    <td>CASH BALANCE AS AT <strong>@lastDate</strong></td>
+                    <td colspan="2" class="text-end">
+                        @Math.Abs(lastRow.RunningCashBalance).ToString("N2") @(lastRow.RunningCashBalance >= 0 ? "CR" : "DR")
+                    </td>
+                </tr>
+                <tr class="table-info">
+                    <td>BANK BALANCE AS AT <strong>@lastDate</strong></td>
+                    <td colspan="2" class="text-end">
+                        @Math.Abs(lastRow.RunningBankBalance).ToString("N2") @(lastRow.RunningBankBalance >= 0 ? "CR" : "DR")
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+        <p class="text-end fst-italic mb-3">End of Cash Book</p>
+    </div>
+
+    <div class="d-print-none">
+        <a class="btn btn-outline-secondary mb-3" href="?year=@Model.SelectedYear&handler=ExportCsv">Export CSV</a>
+        <button type="button" class="btn btn-primary mb-3" onclick="window.print()">Print / Save as PDF</button>
+    </div>
+}

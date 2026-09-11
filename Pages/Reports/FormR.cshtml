@@ -1,0 +1,259 @@
+@page
+@model UASU_VoucherApprovals.Pages.Reports.FormRModel
+
+<style>
+    /* Fixed min-height + flex centering so the Chairman/Chapter
+       Secretary/Treasurer/Acknowledgement boxes all line up visually
+       regardless of how much text is inside any one of them. */
+    .formr-stamp {
+        min-height: 92px;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+    }
+
+    @@media print {
+        table { font-size: 11px; }
+        /* Explicit class, set only on non-last items in the loop below -
+           NOT :not(:last-child), which would also match against the
+           print button/controls that follow the loop and end up
+           forcing a break after the true last form too. */
+        .formr-page-break { break-after: page; }
+    }
+</style>
+
+<h3 class="mb-1 d-print-none">Payment Voucher (Form R)</h3>
+<p class="text-muted d-print-none">One Form R per bank withdrawal - particulars are the vouchers Withdrawal Breakdown already attributes to it, so the two never drift apart.</p>
+@if (Model.FormRs.Any())
+{
+    <div class="mb-3 d-print-none">
+        <button type="button" class="btn btn-primary" onclick="window.print()">Print / Save as PDF</button>
+    </div>
+}
+
+<form method="get" class="row g-2 align-items-end mb-3 d-print-none">
+    <div class="col-auto">
+        <label class="form-label mb-0">View</label>
+        <select name="mode" class="form-select" onchange="this.form.submit()">
+            <option value="single" selected="@(Model.Mode != "all")">Single withdrawal</option>
+            <option value="all" selected="@(Model.Mode == "all")">All withdrawals for a year</option>
+        </select>
+    </div>
+    <div class="col-auto">
+        <label class="form-label mb-0">Year</label>
+        <select name="year" class="form-select" onchange="this.form.submit()">
+            @foreach (var y in Model.AvailableYears)
+            {
+                <option value="@y" selected="@(Model.SelectedYear == y)">@y</option>
+            }
+        </select>
+    </div>
+    @if (Model.Mode != "all")
+    {
+        <div class="col-auto">
+            <label class="form-label mb-0">Withdrawal</label>
+            <select name="withdrawal" class="form-select" onchange="this.form.submit()" style="min-width:320px;">
+                @foreach (var w in Model.Withdrawals.Where(w => w.Withdrawal_Date.Year == Model.SelectedYear))
+                {
+                    <option value="@w.Withdrawal_ID" selected="@(Model.SelectedWithdrawalId == w.Withdrawal_ID)">
+                        @w.Withdrawal_ID - @w.Withdrawal_Date.ToString("dd MMM yyyy") (Sh. @w.Amount.ToString("N2"))
+                    </option>
+                }
+            </select>
+        </div>
+    }
+</form>
+
+@{
+    async Task RenderApprovalStampAsync(string role, UASU_VoucherApprovals.Pages.Reports.FormRModel.ApprovalSummary? summary)
+    {
+        var isApproved = summary is { Approved: true };
+        var borderColor = isApproved ? "#198754" : "#adb5bd";
+        var textColor = isApproved ? "text-success" : "text-muted";
+        <div class="formr-stamp border rounded p-2 text-center" style="border-color:@borderColor !important; border-width:2px !important;">
+            <div class="@textColor fw-bold" style="font-size:1.05rem;">@(isApproved ? "✓ APPROVED" : "PENDING")</div>
+            <div class="fw-semibold">@(summary?.Name ?? "-")</div>
+            <div class="small text-muted">@role</div>
+            @if (summary?.Date is not null)
+            {
+                <div class="small text-muted">@summary.Date.Value.ToString("dd MMM yyyy")</div>
+            }
+        </div>
+        await Task.CompletedTask;
+    }
+
+    async Task RenderTreasurerStampAsync(DateTime? date)
+    {
+        var isRecorded = date is not null;
+        var borderColor = isRecorded ? "#198754" : "#adb5bd";
+        var textColor = isRecorded ? "text-success" : "text-muted";
+        <div class="formr-stamp border rounded p-2 text-center" style="border-color:@borderColor !important; border-width:2px !important;">
+            <div class="@textColor fw-bold" style="font-size:1.05rem;">@(isRecorded ? "✓ PAYMENT RECORDED" : "PENDING")</div>
+            <div class="small text-muted">Treasurer/Deputy Treasurer</div>
+            @if (date is not null)
+            {
+                <div class="small text-muted">@date.Value.ToString("dd MMM yyyy")</div>
+            }
+        </div>
+        await Task.CompletedTask;
+    }
+
+    async Task RenderFormRAsync(UASU_VoucherApprovals.Pages.Reports.FormRModel.FormRData f)
+    {
+        var w = f.Withdrawal;
+        <div class="border p-4" style="max-width:800px;">
+            <div class="d-flex justify-content-between align-items-start mb-2">
+                <img src="~/images/uasu-Logo.jpg" alt="UASU logo" style="height:70px;"
+                     onerror="this.onerror=null; this.src='/images/uasu-logo-placeholder.svg';" />
+                <div class="text-center flex-grow-1 px-2">
+                    <h4 class="fw-bold mb-0">UNIVERSITIES' ACADEMIC STAFF UNION</h4>
+                </div>
+                <div class="text-end small" style="max-width:230px; line-height:1.3;">
+                    <strong>HEAD OFFICE</strong><br />
+                    Uniafric House, 3rd Floor Room 301<br />
+                    Koinange Street<br />
+                    P.O. Box 30198 - 00100<br />
+                    Nairobi, Kenya<br />
+                    Tel: +254 721 947 715<br />
+                    +254 739 366 023<br />
+                    Email: uasunational@yahoo.com
+                </div>
+            </div>
+
+            <div class="d-flex justify-content-between align-items-center border-top border-bottom py-2 mb-3">
+                <strong>FORM: R</strong>
+                <h5 class="fw-bold mb-0">PAYMENT VOUCHER</h5>
+                <strong class="text-danger">No. @w.Withdrawal_ID</strong>
+            </div>
+
+            <p class="mb-3">Date: <strong>@w.Withdrawal_Date.ToString("dd/MM/yyyy")</strong></p>
+
+            <table class="table table-bordered table-sm mb-2">
+                <thead class="table-light">
+                    <tr>
+                        <th>PARTICULARS</th>
+                        <th class="text-end" style="width:20%;">Shs.</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (!f.Particulars.Any())
+                    {
+                        <tr>
+                            <td colspan="2" class="text-muted">No vouchers attributed to this withdrawal yet.</td>
+                        </tr>
+                    }
+                    else
+                    {
+                        @foreach (var p in f.Particulars)
+                        {
+                            <tr>
+                                <td>@p.Category</td>
+                                <td class="text-end">@p.Amount.ToString("N2")</td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+                <tfoot class="fw-bold">
+                    <tr>
+                        <td>TOTAL</td>
+                        <td class="text-end">@f.Total.ToString("N2")</td>
+                    </tr>
+                </tfoot>
+            </table>
+
+            <p class="mb-3">Amount in words Kshs. <strong>@f.AmountInWords</strong></p>
+
+            @if (f.AllVouchersLegacy)
+            {
+                <div class="border rounded p-3 mb-4" style="border-color:#6c757d !important; border-width:2px !important;">
+                    <div class="text-center mb-3">
+                        <div class="text-muted fw-bold" style="font-size:1.05rem;">LEGACY VOUCHER</div>
+                        <div class="small text-muted">Paid before this app's Chairman/Chapter Secretary approval workflow existed - never had a digital approval recorded. Signature required below before filing.</div>
+                    </div>
+                    <div class="row text-center">
+                        <div class="col-6">
+                            <div style="border-top:1px solid #000; margin-top:2.5rem;">Signature</div>
+                            <div class="small text-muted">Chairman</div>
+                        </div>
+                        <div class="col-6">
+                            <div style="border-top:1px solid #000; margin-top:2.5rem;">Signature</div>
+                            <div class="small text-muted">Chapter Secretary</div>
+                        </div>
+                    </div>
+                </div>
+            }
+            else
+            {
+                <div class="row mb-2 gy-2">
+                    <div class="col-6">@{ await RenderApprovalStampAsync("Chairman", f.ChairmanApproval); }</div>
+                    <div class="col-6">@{ await RenderApprovalStampAsync("Chapter Secretary", f.ChapterSecretaryApproval); }</div>
+                </div>
+                @if (f.LegacyVoucherCount > 0)
+                {
+                    <p class="small text-muted mb-4">Also includes @f.LegacyVoucherCount legacy voucher(s) predating the approval workflow, shown above without a stamp.</p>
+                }
+                else
+                {
+                    <div class="mb-4"></div>
+                }
+            }
+
+            @{
+                var totalPayments = f.Acknowledgements.Select(a => a.Payment_ID).Distinct().Count() + f.UnacknowledgedPaymentCount;
+                var allAcknowledged = f.Acknowledgements.Any() && f.UnacknowledgedPaymentCount == 0;
+            }
+            <div class="row gy-2 mb-2">
+                <div class="col-6">@{ await RenderTreasurerStampAsync(f.TreasurerActionDate); }</div>
+                <div class="col-6">
+                    @if (f.Acknowledgements.Any())
+                    {
+                        var borderColor = allAcknowledged ? "#198754" : "#fd7e14";
+                        var textColor = allAcknowledged ? "text-success" : "text-warning";
+                        <div class="formr-stamp border rounded p-2" style="border-color:@borderColor !important; border-width:2px !important;">
+                            <div class="@textColor fw-bold text-center" style="font-size:1.05rem;">
+                                @(allAcknowledged ? "✓ RECEIPT ACKNOWLEDGED" : $"PARTIALLY ACKNOWLEDGED ({f.Acknowledgements.Count} of {totalPayments})")
+                            </div>
+                            @if (!allAcknowledged && f.UnconfirmedPayeeNames.Any())
+                            {
+                                <div class="small text-muted mt-1 text-center">
+                                    Yet to confirm: @string.Join(", ", f.UnconfirmedPayeeNames)
+                                </div>
+                            }
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="formr-stamp row text-center align-items-end">
+                            <div class="col-6">
+                                <div style="border-top:1px solid #000;">Recipient</div>
+                            </div>
+                            <div class="col-6">
+                                <div style="border-top:1px solid #000;">Date</div>
+                            </div>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+        await Task.CompletedTask;
+    }
+}
+
+@if (!Model.FormRs.Any())
+{
+    <p class="text-muted">No withdrawals found for this selection.</p>
+}
+else
+{
+    @for (var i = 0; i < Model.FormRs.Count; i++)
+    {
+        var isLast = i == Model.FormRs.Count - 1;
+        <div class="@(isLast ? "" : "formr-page-break") mb-4">
+            @{ await RenderFormRAsync(Model.FormRs[i]); }
+        </div>
+    }
+
+    <div class="d-print-none mt-3">
+        <button type="button" class="btn btn-primary" onclick="window.print()">Print / Save as PDF</button>
+    </div>
+}

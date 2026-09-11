@@ -1,0 +1,178 @@
+@page
+@model UASU_VoucherApprovals.Pages.Reports.IndexModel
+@using UASU_VoucherApprovals.Services
+
+<h3 class="mb-3">Income &amp; Expense Reports</h3>
+
+<style>
+    /* CSS-only hover tooltip - same mechanism as Official Totals: the
+       budget-line breakdown is rendered into the page for every amount
+       and just hidden until hovered (or keyboard-focused), no
+       JavaScript or extra request involved. */
+    .amount-hover { position: relative; border-bottom: 1px dotted #6c757d; cursor: help; display: inline-block; }
+    .amount-hover .budget-tooltip {
+        display: none; position: absolute; right: 0; top: 100%; margin-top: 6px; z-index: 20;
+        width: 280px; text-align: left; background: var(--bs-body-bg, #fff); border: 1px solid rgba(0,0,0,.15);
+        border-radius: .5rem; box-shadow: 0 .5rem 1.5rem rgba(0,0,0,.15); padding: .75rem; font-weight: normal;
+    }
+    .amount-hover:hover .budget-tooltip, .amount-hover:focus .budget-tooltip { display: block; }
+    .budget-tooltip table { margin-bottom: 0; font-size: .85rem; }
+    .budget-tooltip .tooltip-title { font-size: .72rem; text-transform: uppercase; letter-spacing: .03em; color: #6c757d; margin-bottom: .5rem; }
+    .amount-hover.total-hover .budget-tooltip { border-color: #6f42c1; }
+</style>
+
+@{
+    // Wraps just the amount, not the whole cell, so each period's
+    // Income/Expense gets its own contextually-scoped breakdown. lines
+    // is null/empty for a cell with nothing of that type that period
+    // (e.g. no income at all), in which case this renders the bare
+    // amount (or the caller's own "—" placeholder) with no hover.
+    async Task RenderAmountHoverAsync(string title, decimal amount, List<UASU_VoucherApprovals.Pages.Reports.IndexModel.BudgetLineAmount>? lines, bool isTotal = false)
+    {
+        if (lines is null || lines.Count == 0)
+        {
+            @amount.ToString("N2")
+        }
+        else
+        {
+            <span class="amount-hover @(isTotal ? "total-hover" : "")" tabindex="0">
+                @amount.ToString("N2")
+                <div class="budget-tooltip">
+                    <div class="tooltip-title">@title</div>
+                    <table class="table table-sm mb-0">
+                        <tbody>
+                            @foreach (var line in lines)
+                            {
+                                <tr><td>@line.Category_Name</td><td class="text-end">@line.Amount.ToString("N2")</td></tr>
+                            }
+                        </tbody>
+                        <tfoot>
+                            <tr class="fw-bold border-top"><td>Total</td><td class="text-end">@amount.ToString("N2")</td></tr>
+                        </tfoot>
+                    </table>
+                </div>
+            </span>
+        }
+        await Task.CompletedTask;
+    }
+}
+
+<ul class="nav nav-tabs mb-3">
+    @foreach (var p in Enum.GetValues<ReportPeriod>())
+    {
+        <li class="nav-item">
+            <a class="nav-link @(Model.SelectedPeriod == p ? "active" : "")"
+               href="/Reports?period=@p&year=@Model.SelectedYear">@p</a>
+        </li>
+    }
+</ul>
+
+<form method="get" class="row g-2 align-items-end mb-3">
+    <input type="hidden" name="period" value="@Model.SelectedPeriod" />
+    <div class="col-auto">
+        <label class="form-label mb-0">Year</label>
+        <select name="year" class="form-select" onchange="this.form.submit()">
+            <option value="">All years</option>
+            @foreach (var y in Model.AvailableYears)
+            {
+                <option value="@y" selected="@(Model.SelectedYear == y)">@y</option>
+            }
+        </select>
+    </div>
+</form>
+
+@if (!Model.Rows.Any())
+{
+    <p class="text-muted">No payment data for this period yet.</p>
+}
+else
+{
+    <table class="table table-bordered table-hover align-middle">
+        <thead class="table-light">
+            <tr>
+                <th>Period</th>
+                <th class="text-end">Income (Sh.)</th>
+                <th class="text-end">Expense (Sh.)</th>
+                <th class="text-end">Net (Sh.)</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var r in Model.Rows)
+            {
+                <tr>
+                    <td>@r.PeriodLabel</td>
+                    <td class="text-end">@{ await RenderAmountHoverAsync("Income by budget code — " + r.PeriodLabel, r.TotalIncome, Model.IncomeBreakdownByPeriod.GetValueOrDefault(r.PeriodLabel)); }</td>
+                    <td class="text-end">@{ await RenderAmountHoverAsync("Expense by budget code — " + r.PeriodLabel, r.TotalExpense, Model.ExpenseBreakdownByPeriod.GetValueOrDefault(r.PeriodLabel)); }</td>
+                    <td class="text-end @(r.NetBalance < 0 ? "text-danger" : "text-success")">@r.NetBalance.ToString("N2")</td>
+                </tr>
+            }
+        </tbody>
+        <tfoot class="table-light fw-bold">
+            <tr>
+                <td>Total</td>
+                <td class="text-end">@{ await RenderAmountHoverAsync("Income by budget code — Total (all periods shown)", Model.Rows.Sum(r => r.TotalIncome), Model.IncomeBreakdownTotal, isTotal: true); }</td>
+                <td class="text-end">@{ await RenderAmountHoverAsync("Expense by budget code — Total (all periods shown)", Model.Rows.Sum(r => r.TotalExpense), Model.ExpenseBreakdownTotal, isTotal: true); }</td>
+                <td class="text-end">@Model.Rows.Sum(r => r.NetBalance).ToString("N2")</td>
+            </tr>
+        </tfoot>
+    </table>
+
+    <a class="btn btn-outline-secondary mb-3" href="?period=@Model.SelectedPeriod&year=@Model.SelectedYear&handler=ExportSummaryCsv">Export CSV</a>
+    <button type="button" class="btn btn-outline-primary mb-3" onclick="toggleDetail()">
+        <span id="toggleLabel">View Details by Budget Code</span>
+    </button>
+
+    <div id="detailSection" style="display:none;">
+        @if (!Model.BudgetBreakdown.Any())
+        {
+            <p class="text-muted">No budget-coded payments for this period yet.</p>
+        }
+        else
+        {
+            <a class="btn btn-outline-secondary mb-3" href="?period=@Model.SelectedPeriod&year=@Model.SelectedYear&handler=ExportBudgetCsv">Export CSV</a>
+            <table class="table table-bordered table-hover align-middle">
+                <thead class="table-light">
+                    <tr>
+                        <th>Period</th>
+                        <th>Budget Category</th>
+                        <th>Type</th>
+                        <th class="text-end">Income (Sh.)</th>
+                        <th class="text-end">Expense (Sh.)</th>
+                        <th class="text-end">Net (Sh.)</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var b in Model.BudgetBreakdown)
+                    {
+                        <tr>
+                            <td>@b.PeriodLabel</td>
+                            <td>@b.Category_Name</td>
+                            <td>@b.Category_Type</td>
+                            <td class="text-end">@b.TotalIncome.ToString("N2")</td>
+                            <td class="text-end">@b.TotalExpense.ToString("N2")</td>
+                            <td class="text-end @(b.NetBalance < 0 ? "text-danger" : "text-success")">@b.NetBalance.ToString("N2")</td>
+                        </tr>
+                    }
+                </tbody>
+                <tfoot class="table-light fw-bold">
+                    <tr>
+                        <td colspan="3">Total</td>
+                        <td class="text-end">@Model.BudgetBreakdown.Sum(b => b.TotalIncome).ToString("N2")</td>
+                        <td class="text-end">@Model.BudgetBreakdown.Sum(b => b.TotalExpense).ToString("N2")</td>
+                        <td class="text-end">@Model.BudgetBreakdown.Sum(b => b.NetBalance).ToString("N2")</td>
+                    </tr>
+                </tfoot>
+            </table>
+        }
+    </div>
+
+    <script>
+        function toggleDetail() {
+            var section = document.getElementById('detailSection');
+            var label = document.getElementById('toggleLabel');
+            var isHidden = section.style.display === 'none';
+            section.style.display = isHidden ? '' : 'none';
+            label.textContent = isHidden ? 'Hide Details by Budget Code' : 'View Details by Budget Code';
+        }
+    </script>
+}

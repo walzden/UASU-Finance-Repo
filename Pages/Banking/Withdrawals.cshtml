@@ -1,0 +1,74 @@
+@page
+@model UASU_VoucherApprovals.Pages.Banking.WithdrawalsModel
+
+<h3 class="mb-3">Bank Withdrawals</h3>
+
+@if (!string.IsNullOrEmpty(Model.StatusMessage))
+{
+    <div class="alert @(Model.StatusIsError ? "alert-danger" : "alert-success")">@Model.StatusMessage</div>
+}
+
+<form method="post" asp-page="/Banking/Withdrawals" class="row g-3 mb-4" style="max-width: 640px;">
+    <div class="col-md-6">
+        <label class="form-label">Withdrawal Date</label>
+        <input asp-for="Input.Withdrawal_Date" type="date" class="form-control" />
+    </div>
+    <div class="col-md-6">
+        <label class="form-label">Amount (Sh.)</label>
+        <input asp-for="Input.Amount" type="number" step="0.01" class="form-control" />
+    </div>
+    <div class="col-md-6">
+        <label class="form-label">Reference No.</label>
+        <input asp-for="Input.Reference_No" class="form-control" />
+    </div>
+    <div class="col-md-6">
+        <label class="form-label">Bank Account</label>
+        <input asp-for="Input.Bank_Account" class="form-control" />
+    </div>
+    <div class="col-12">
+        <label class="form-label">Notes</label>
+        <textarea asp-for="Input.Notes" class="form-control" rows="2"></textarea>
+    </div>
+    <div class="col-12">
+        <button type="submit" class="btn btn-primary">Record Withdrawal</button>
+    </div>
+</form>
+
+<h5>Recent Withdrawals</h5>
+@if (!Model.Withdrawals.Any())
+{
+    <p class="text-muted">No withdrawals recorded yet.</p>
+}
+else
+{
+    <a class="btn btn-outline-secondary btn-sm mb-3" href="?handler=ExportCsv">Export CSV</a>
+    <table class="table table-bordered table-hover align-middle">
+        <thead class="table-light">
+            <tr>
+                <th>Withdrawal</th>
+                <th>Date</th>
+                <th>Reference</th>
+                <th>Bank Account</th>
+                <th class="text-end">Amount (Sh.)</th>
+                <th class="text-end">Allocated to Payments (Sh.)</th>
+                <th class="text-end">Charges (Sh.)</th>
+                <th class="text-end">Remaining (Sh.)</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var w in Model.Withdrawals)
+            {
+                <tr>
+                    <td>@w.Withdrawal_ID</td>
+                    <td>@w.Withdrawal_Date.ToString("yyyy-MM-dd")</td>
+                    <td>@w.Reference_No</td>
+                    <td>@w.Bank_Account</td>
+                    <td class="text-end">@w.Amount.ToString("N2")</td>
+                    <td class="text-end">@w.Allocated.ToString("N2")</td>
+                    <td class="text-end">@w.Charges.ToString("N2")</td>
+                    <td class="text-end @(w.Remaining > 0 ? "text-warning" : "text-success")">@w.Remaining.ToString("N2")</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}

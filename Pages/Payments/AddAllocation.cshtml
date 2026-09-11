@@ -1,0 +1,49 @@
+@page
+@model UASU_VoucherApprovals.Pages.Payments.AddAllocationModel
+
+<h3 class="mb-3">Add a Voucher to an Existing Payment</h3>
+<p class="text-muted">
+    Use this when one payment needs to cover more than one voucher — pick the payment already
+    recorded, then add another voucher and how much of that payment goes toward it.
+</p>
+
+@if (!string.IsNullOrEmpty(Model.StatusMessage))
+{
+    <div class="alert @(Model.StatusIsError ? "alert-danger" : "alert-success")">@Model.StatusMessage</div>
+}
+
+@if (!Model.Payments.Any())
+{
+    <p class="text-muted">No payments with unallocated balance right now — every recorded payment is already fully applied to its voucher(s).</p>
+}
+else
+{
+    <form method="post" asp-page="/Payments/AddAllocation" class="row g-3" style="max-width: 640px;">
+        <div class="col-12">
+            <label class="form-label">Payment</label>
+            <select asp-for="Input.Payment_ID" class="form-select">
+                @foreach (var p in Model.Payments)
+                {
+                    <option value="@p.Id">@p.Label</option>
+                }
+            </select>
+        </div>
+        <div class="col-12">
+            <label class="form-label">Voucher to Add</label>
+            <select asp-for="Input.Voucher_ID" class="form-select">
+                @foreach (var v in Model.EligibleVouchers)
+                {
+                    <option value="@v.Id">@v.Label</option>
+                }
+            </select>
+            <div class="form-text">Only fully-approved (or legacy) unpaid vouchers are listed.</div>
+        </div>
+        <div class="col-md-6">
+            <label class="form-label">Amount to Allocate (Sh.)</label>
+            <input asp-for="Input.Allocated_Amount" type="number" step="0.01" class="form-control" />
+        </div>
+        <div class="col-12">
+            <button type="submit" class="btn btn-primary">Add to Payment</button>
+        </div>
+    </form>
+}

@@ -1,0 +1,93 @@
+@page
+@model UASU_VoucherApprovals.Pages.Approvals.IndexModel
+
+<h3 class="mb-3">Vouchers awaiting your approval</h3>
+
+@if (!string.IsNullOrEmpty(Model.StatusMessage))
+{
+    <div class="alert @(Model.StatusIsError ? "alert-danger" : "alert-success")">@Model.StatusMessage</div>
+}
+
+@if (!Model.Groups.Any() && !Model.Ungrouped.Any())
+{
+    <p class="text-muted">Nothing pending your review.</p>
+}
+else
+{
+    @foreach (var group in Model.Groups)
+    {
+        <div class="group-card">
+            <div class="group-header">
+                <span class="title">@group.Budget_ID &middot; @group.Budget_Category</span>
+                <span class="meta">
+                    Week of @group.WeekStart.ToString("yyyy-MM-dd") &middot; @group.Vouchers.Count vouchers &middot;
+                    Sh. @group.Vouchers.Sum(v => v.Amount).ToString("N2") total
+                </span>
+                <form method="post" asp-page-handler="BulkApprove" class="ms-auto d-flex align-items-center gap-2">
+                    @foreach (var v in group.Vouchers)
+                    {
+                        <input type="hidden" name="voucherIds" value="@v.Voucher_ID" />
+                    }
+                    <textarea name="comments" class="form-control form-control-sm" placeholder="Comments for all @group.Vouchers.Count (optional)" style="width:220px;" rows="1"></textarea>
+                    <button type="submit" class="btn btn-success btn-sm">Approve all @group.Vouchers.Count</button>
+                </form>
+            </div>
+            <table class="table table-bordered align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Voucher</th>
+                        <th>Date</th>
+                        <th>Type</th>
+                        <th>Payee</th>
+                        <th>Amount</th>
+                        <th>Description</th>
+                        <th>Other approver</th>
+                        <th style="width:280px;">Decision</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var v in group.Vouchers)
+                    {
+                        <partial name="_ApprovalRow" model="v" />
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+
+    @if (Model.Ungrouped.Any())
+    {
+        if (Model.Groups.Any())
+        {
+            <h5 class="mb-2 text-muted" style="font-size:1rem;">Not part of a group</h5>
+        }
+
+        <table class="table table-bordered align-middle">
+            <thead class="table-light">
+                <tr>
+                    <th>Voucher</th>
+                    <th>Date</th>
+                    <th>Type</th>
+                    <th>Payee</th>
+                    <th>Amount</th>
+                    <th>Description</th>
+                    <th>Other approver</th>
+                    <th style="width:280px;">Decision</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var v in Model.Ungrouped)
+                {
+                    <partial name="_ApprovalRow" model="v" />
+                }
+            </tbody>
+        </table>
+    }
+}
+
+<style>
+    .group-card { border: 1px solid rgba(13,110,253,0.25); border-radius: .5rem; overflow: hidden; margin-bottom: 1.5rem; }
+    .group-header { background: rgba(13,110,253,0.08); padding: .75rem 1rem; display: flex; align-items: center; gap: .75rem; flex-wrap: wrap; }
+    .group-header .title { font-weight: 600; }
+    .group-header .meta { color: #6c757d; font-size: .85rem; }
+</style>

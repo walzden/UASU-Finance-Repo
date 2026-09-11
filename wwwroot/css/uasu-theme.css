@@ -1,0 +1,73 @@
+/* UASU brand accent, pulled from the indigo in the UASU logo's cap and
+   lettering. Used as the primary accent app-wide (buttons, links, focus
+   rings, nav bar) so every page feels consistent with the login page.
+
+   Deliberately does NOT touch .text-success/.text-danger/.alert-success/
+   .alert-danger - those carry real meaning (positive/negative amounts,
+   success/error banners) throughout the reports and forms, and already
+   happen to be green/red by Bootstrap default; retinting them here
+   would blur that meaning with pure branding. */
+
+:root {
+    --uasu-accent: #26265C;
+    --uasu-accent-dark: #1C1C46;
+    --uasu-accent-light: #4A4A8C;
+    --uasu-accent-light-rgb: 74, 74, 140;
+}
+
+.btn-primary {
+    --bs-btn-bg: var(--uasu-accent);
+    --bs-btn-border-color: var(--uasu-accent);
+    --bs-btn-hover-bg: var(--uasu-accent-dark);
+    --bs-btn-hover-border-color: var(--uasu-accent-dark);
+    --bs-btn-active-bg: var(--uasu-accent-dark);
+    --bs-btn-active-border-color: var(--uasu-accent-dark);
+    --bs-btn-disabled-bg: var(--uasu-accent);
+    --bs-btn-disabled-border-color: var(--uasu-accent);
+    --bs-btn-focus-shadow-rgb: var(--uasu-accent-light-rgb);
+}
+
+.form-control:focus, .form-select:focus {
+    border-color: var(--uasu-accent-light);
+    box-shadow: 0 0 0 .25rem rgba(var(--uasu-accent-light-rgb), .25);
+}
+
+a {
+    color: var(--uasu-accent);
+}
+a:hover {
+    color: var(--uasu-accent-dark);
+}
+
+.nav-tabs .nav-link.active {
+    color: var(--uasu-accent-dark);
+    border-bottom: 2px solid var(--uasu-accent);
+}
+
+/* Top nav bar - same indigo as the login page's hero panel, so the two
+   feel like one identity. */
+.navbar-uasu {
+    background: var(--uasu-accent) !important;
+}
+
+/* Nobody wants the nav bar taking up space at the top of a printed
+   page/PDF export - applies app-wide, not just on report pages. A4 with
+   narrow margins is a sensible default for any page printed from here,
+   not just the Cash Book. */
+@media print {
+    .navbar-uasu {
+        display: none !important;
+    }
+    @page {
+        size: A4;
+        margin: 10mm;
+    }
+    /* Bootstrap's .container has a breakpoint-based max-width that
+       doesn't resolve sensibly against a print page's dimensions,
+       leaving most of the printed page blank even with narrow @page
+       margins - let content actually fill the page width instead. */
+    .container {
+        max-width: 100% !important;
+        width: 100% !important;
+    }
+}

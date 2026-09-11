@@ -1,0 +1,80 @@
+@page
+@model UASU_VoucherApprovals.Pages.Officials.IndexModel
+
+<h3 class="mb-3">Officials</h3>
+
+@if (!string.IsNullOrEmpty(Model.StatusMessage))
+{
+    <div class="alert alert-success">@Model.StatusMessage</div>
+}
+
+<table class="table table-sm">
+    <thead>
+        <tr>
+            <th>ID</th>
+            <th>Name</th>
+            <th>Role</th>
+            <th>Current</th>
+            <th>Email</th>
+            <th>Phone</th>
+            <th>Address</th>
+            <th></th>
+        </tr>
+    </thead>
+    <tbody>
+        @foreach (var o in Model.Officials)
+        {
+            <tr class="@(o.IsCurrent ? "" : "text-muted")">
+                <td>@o.OfficialID</td>
+                <td>@o.FullName</td>
+                <td>@o.Role</td>
+                <td>@(o.IsCurrent ? "Yes" : "No")</td>
+                <td>@o.Email</td>
+                <td>@o.Phone_No</td>
+                <td>@o.Address</td>
+                <td><a asp-page="/Officials/Edit" asp-route-officialId="@o.OfficialID">Edit</a></td>
+            </tr>
+        }
+    </tbody>
+</table>
+
+<h4 class="mt-4">Add Official</h4>
+<form method="post" asp-page="/Officials/Index" class="row g-3" style="max-width: 640px;">
+    <div class="col-12">
+        <label class="form-label">Full Name</label>
+        <input asp-for="Input.FullName" class="form-control" />
+        <span asp-validation-for="Input.FullName" class="text-danger"></span>
+    </div>
+    <div class="col-md-6">
+        <label class="form-label">Role</label>
+        <input asp-for="Input.Role" class="form-control" list="roleOptions" />
+        <datalist id="roleOptions">
+            <option value="Chairman"></option>
+            <option value="Chapter Secretary"></option>
+            <option value="Treasurer"></option>
+            <option value="Deputy Treasurer"></option>
+        </datalist>
+        <div class="form-text">Must exactly match Chairman / Chapter Secretary / Treasurer / Deputy Treasurer to be offered a login on Add Logins - any other role (e.g. Delegate) is fine for payee/reporting purposes only.</div>
+    </div>
+    <div class="col-md-6 form-check mt-4">
+        <input asp-for="Input.IsCurrent" type="checkbox" class="form-check-input" />
+        <label asp-for="Input.IsCurrent" class="form-check-label">Currently serving</label>
+    </div>
+    <div class="col-md-6">
+        <label class="form-label">Email</label>
+        <input asp-for="Input.Email" class="form-control" />
+        <span asp-validation-for="Input.Email" class="text-danger"></span>
+        <div class="form-text">Used as the login username if this role gets a login via Add Logins.</div>
+    </div>
+    <div class="col-md-6">
+        <label class="form-label">Phone</label>
+        <input asp-for="Input.Phone_No" class="form-control" />
+    </div>
+    <div class="col-12">
+        <label class="form-label">Address</label>
+        <input asp-for="Input.Address" class="form-control" />
+    </div>
+    <div class="col-12">
+        <button type="submit" class="btn btn-primary">Add Official</button>
+    </div>
+</form>

@@ -1,0 +1,75 @@
+@page
+@model UASU_VoucherApprovals.Pages.MemberRegister.RecordContributionsModel
+
+<h3 class="mb-1">Record Union Contributions</h3>
+<p class="text-muted">One month at a time, every contributor at once - matches how MMU's payroll checkoff deduction list arrives. Leave Amount blank for anyone not contributing this month; a contributor only appears on the year-end register once they have at least one saved amount for that year.</p>
+
+@if (!string.IsNullOrEmpty(Model.StatusMessage))
+{
+    <div class="alert alert-success">@Model.StatusMessage</div>
+}
+
+<form method="get" class="row g-2 align-items-end mb-3">
+    <div class="col-auto">
+        <label class="form-label mb-0">Year</label>
+        <input type="number" name="year" class="form-control" value="@Model.SelectedYear" style="width:110px;" />
+    </div>
+    <div class="col-auto">
+        <label class="form-label mb-0">Month</label>
+        <select name="month" class="form-select" onchange="this.form.submit()">
+            @for (var m = 1; m <= 12; m++)
+            {
+                <option value="@m" selected="@(Model.SelectedMonth == m)">@RecordContributionsModel.MonthNames[m - 1]</option>
+            }
+        </select>
+    </div>
+    <div class="col-auto">
+        <button type="submit" class="btn btn-outline-secondary">Go</button>
+    </div>
+</form>
+
+@if (!Model.Grid.Any())
+{
+    <p class="text-muted">No contributors yet - <a asp-page="/MemberRegister/Index">add one</a> first.</p>
+}
+else
+{
+    <form method="post">
+        <input type="hidden" name="year" value="@Model.SelectedYear" />
+        <input type="hidden" name="month" value="@Model.SelectedMonth" />
+        <table class="table table-sm table-hover align-middle">
+            <thead>
+                <tr>
+                    <th>PF No.</th>
+                    <th>Name</th>
+                    <th style="width:160px;">Type</th>
+                    <th style="width:180px;">Amount (@RecordContributionsModel.MonthNames[Model.SelectedMonth - 1])</th>
+                </tr>
+            </thead>
+            <tbody>
+                @for (var i = 0; i < Model.Grid.Count; i++)
+                {
+                    var row = Model.Grid[i];
+                    <tr>
+                        <td>@row.PF_No</td>
+                        <td>
+                            @row.Full_Name
+                            <input type="hidden" name="Entries[@i].Contributor_ID" value="@row.Contributor_ID" />
+                        </td>
+                        <td>
+                            <select name="Entries[@i].Membership_Type" class="form-select form-select-sm">
+                                <option value="Member" selected="@(row.Membership_Type == "Member")">Member</option>
+                                <option value="Agency" selected="@(row.Membership_Type == "Agency")">Agency Payer</option>
+                            </select>
+                        </td>
+                        <td>
+                            <input type="number" step="0.01" min="0" name="Entries[@i].Amount"
+                                   class="form-control form-control-sm" value="@row.Amount" />
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        <button type="submit" class="btn btn-primary">Save Contributions</button>
+    </form>
+}

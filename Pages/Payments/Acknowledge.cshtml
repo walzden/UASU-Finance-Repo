@@ -1,0 +1,112 @@
+@page
+@model UASU_VoucherApprovals.Pages.Payments.AcknowledgeModel
+
+<h3 class="mb-3">Log Payee Acknowledgement of Receipt</h3>
+
+@if (!string.IsNullOrEmpty(Model.StatusMessage))
+{
+    <div class="alert @(Model.StatusIsError ? "alert-danger" : "alert-success")">@Model.StatusMessage</div>
+}
+
+@if (!Model.AwaitingPayments.Any())
+{
+    <p class="text-muted">No payments are waiting on an acknowledgement.</p>
+}
+else
+{
+    <form method="post" asp-page="/Payments/Acknowledge" enctype="multipart/form-data" class="row g-3" style="max-width: 640px;">
+        <div class="col-12">
+            <label class="form-label">Payment</label>
+            <select asp-for="Input.Payment_ID" class="form-select" onchange="prefillPayee(this)">
+                @foreach (var p in Model.AwaitingPayments)
+                {
+                    <option value="@p.Id" data-payee="@p.PayeeName">@p.Label</option>
+                }
+            </select>
+        </div>
+        <div class="col-12">
+            <label class="form-label">Acknowledged By (payee name / signature)</label>
+            <input asp-for="Input.Acknowledged_By" class="form-control" />
+            <div class="form-text">Prefilled from the payment's payee - edit if someone else is signing on their behalf.</div>
+        </div>
+        <div class="col-md-6">
+            <label class="form-label">Method</label>
+            <select asp-for="Input.Method" class="form-select">
+                <option>Signed Voucher</option>
+                <option>WhatsApp Confirmation</option>
+                <option>M-Pesa Confirmation</option>
+                <option>SMS Confirmation</option>
+                <option>Email Confirmation</option>
+                <option>Verbal - Witnessed</option>
+                <option>Other</option>
+            </select>
+        </div>
+        <div class="col-12">
+            <label class="form-label">Notes</label>
+            <textarea asp-for="Input.Notes" class="form-control" rows="2"></textarea>
+        </div>
+        <div class="col-12">
+            <label class="form-label">Attachment (optional - e.g. WhatsApp confirmation screenshot)</label>
+            <input asp-for="Input.Attachment" type="file" accept="image/png, image/jpeg" class="form-control" />
+            <div class="form-text">JPEG or PNG, up to 5MB.</div>
+        </div>
+        <div class="col-12">
+            <button type="submit" class="btn btn-primary">Log Acknowledgement</button>
+        </div>
+    </form>
+
+    <script>
+        // Purely a UX nicety - the field stays a plain editable text
+        // input, so a different signer's name (or a correction) can
+        // still overwrite whatever gets prefilled here.
+        function prefillPayee(select) {
+            var selected = select.options[select.selectedIndex];
+            var payee = selected ? selected.getAttribute('data-payee') : null;
+            if (payee) {
+                document.querySelector('[name="Input.Acknowledged_By"]').value = payee;
+            }
+        }
+
+        prefillPayee(document.querySelector('[name="Input.Payment_ID"]'));
+    </script>
+}
+
+@if (Model.RecentAcknowledgements.Any())
+{
+    <h4 class="mt-4">Recently Logged Acknowledgements</h4>
+    <p><a class="btn btn-outline-secondary btn-sm" href="?handler=ExportCsv">Export Full History (CSV)</a></p>
+    <table class="table table-sm">
+        <thead>
+            <tr>
+                <th>Payment</th>
+                <th>Date</th>
+                <th>Acknowledged By</th>
+                <th>Method</th>
+                <th>Notes</th>
+                <th>Attachment</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var a in Model.RecentAcknowledgements)
+            {
+                <tr>
+                    <td>@a.Payment_ID</td>
+                    <td>@a.Acknowledgement_Date.ToString("yyyy-MM-dd")</td>
+                    <td>@a.Acknowledged_By</td>
+                    <td>@a.Method</td>
+                    <td>@a.Notes</td>
+                    <td>
+                        @if (a.HasAttachment)
+                        {
+                            <a asp-page="/Payments/AcknowledgementAttachment" asp-route-paymentId="@a.Payment_ID" target="_blank">View</a>
+                        }
+                        else
+                        {
+                            <span class="text-muted">&mdash;</span>
+                        }
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}

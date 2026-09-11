@@ -1,0 +1,72 @@
+@page
+@model UASU_VoucherApprovals.Pages.Suppliers.IndexModel
+
+<h3 class="mb-3">Suppliers</h3>
+
+@if (!string.IsNullOrEmpty(Model.StatusMessage))
+{
+    <div class="alert alert-success">@Model.StatusMessage</div>
+}
+
+<table class="table table-sm">
+    <thead>
+        <tr>
+            <th>ID</th>
+            <th>Business Name</th>
+            <th>Category</th>
+            <th>Tax PIN</th>
+            <th>Phone</th>
+            <th>Email</th>
+            <th>Address</th>
+            <th></th>
+        </tr>
+    </thead>
+    <tbody>
+        @foreach (var s in Model.Suppliers)
+        {
+            <tr>
+                <td>@s.Supplier_ID</td>
+                <td>@s.Business_Name</td>
+                <td>@s.Service_Category</td>
+                <td>@s.Tax_PIN</td>
+                <td>@s.Contact_Phone</td>
+                <td>@s.Email</td>
+                <td>@s.Address</td>
+                <td><a asp-page="/Suppliers/Edit" asp-route-supplierId="@s.Supplier_ID">Edit</a></td>
+            </tr>
+        }
+    </tbody>
+</table>
+
+<h4 class="mt-4">Add Supplier</h4>
+<form method="post" asp-page="/Suppliers/Index" class="row g-3" style="max-width: 640px;">
+    <div class="col-12">
+        <label class="form-label">Business Name</label>
+        <input asp-for="Input.Business_Name" class="form-control" />
+        <span asp-validation-for="Input.Business_Name" class="text-danger"></span>
+    </div>
+    <div class="col-md-6">
+        <label class="form-label">Service Category</label>
+        <input asp-for="Input.Service_Category" class="form-control" />
+    </div>
+    <div class="col-md-6">
+        <label class="form-label">Tax PIN</label>
+        <input asp-for="Input.Tax_PIN" class="form-control" />
+    </div>
+    <div class="col-md-6">
+        <label class="form-label">Phone</label>
+        <input asp-for="Input.Contact_Phone" class="form-control" />
+    </div>
+    <div class="col-md-6">
+        <label class="form-label">Email</label>
+        <input asp-for="Input.Email" class="form-control" />
+        <span asp-validation-for="Input.Email" class="text-danger"></span>
+    </div>
+    <div class="col-12">
+        <label class="form-label">Address</label>
+        <input asp-for="Input.Address" class="form-control" />
+    </div>
+    <div class="col-12">
+        <button type="submit" class="btn btn-primary">Add Supplier</button>
+    </div>
+</form>
