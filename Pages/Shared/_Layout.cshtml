@@ -23,8 +23,14 @@
                 </button>
                 <div class="collapse navbar-collapse" id="mainNavbar">
                     <ul class="navbar-nav me-auto">
-                        @* Its own top-level item so every signed-in official sees it straight away. *@
-                        <li class="nav-item"><a class="nav-link" href="/Activities/Log">Log Activity</a></li>
+                        @* Its own top-level menu so every signed-in official sees it straight away. *@
+                        <li class="nav-item dropdown">
+                            <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">Activities</a>
+                            <ul class="dropdown-menu">
+                                <li><a class="dropdown-item" href="/Activities/Log">Log Activity</a></li>
+                                <li><a class="dropdown-item" href="/Activities/History">Activity History</a></li>
+                            </ul>
+                        </li>
                         @if (User.IsInRole("Chairman") || User.IsInRole("Chapter Secretary"))
                         {
                             <li class="nav-item"><a class="nav-link" href="/Approvals">Pending Approvals</a></li>

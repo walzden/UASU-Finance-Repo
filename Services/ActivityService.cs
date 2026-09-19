@@ -12,6 +12,7 @@ public interface IActivityService
     Task<IReadOnlyList<ActivityOfficialOption>> GetOfficialsAsync();
     Task<string> CreateActivityAsync(ActivityInputModel input, string loggedBy);
     Task<IReadOnlyList<ActivityView>> GetMyActivitiesAsync(string officialId);
+    Task<int> CountRecordedForAsync(string officialId);
     Task<ActivityEvidenceFile?> GetEvidenceAsync(int evidenceId);
 
     Task<IReadOnlyList<OpenActivityLine>> GetOpenLinesAsync(DateTime? monthStart);
@@ -195,6 +196,19 @@ public class ActivityService : IActivityService
         }
 
         return activities;
+    }
+
+    // Activities someone else logged with this official on them - backs the
+    // "colleagues recorded N activities for you" notice on Log Activity.
+    public async Task<int> CountRecordedForAsync(string officialId)
+    {
+        using var conn = _db.CreateConnection();
+        return await conn.ExecuteScalarAsync<int>(@"
+            SELECT COUNT(*)
+            FROM ActivityParticipants p
+            INNER JOIN Activities a ON a.Activity_ID = p.Activity_ID
+            WHERE p.OfficialID = @OfficialId AND a.Logged_By <> @OfficialId;",
+            new { OfficialId = officialId });
     }
 
     public async Task<ActivityEvidenceFile?> GetEvidenceAsync(int evidenceId)

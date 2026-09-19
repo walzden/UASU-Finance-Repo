@@ -25,7 +25,11 @@ public class LogModel : PageModel
     public ActivityInputModel Input { get; set; } = new();
 
     public IReadOnlyList<ActivityOfficialOption> Officials { get; set; } = Array.Empty<ActivityOfficialOption>();
-    public IReadOnlyList<ActivityView> Activities { get; set; } = Array.Empty<ActivityView>();
+
+    // How many activities colleagues have recorded for the signed-in official;
+    // drives the "check them in Activity History" notice. The history list
+    // itself lives on its own page (Activity History).
+    public int RecordedForMeCount { get; set; }
 
     [TempData]
     public string? StatusMessage { get; set; }
@@ -71,6 +75,6 @@ public class LogModel : PageModel
     private async Task LoadAsync()
     {
         Officials = await _activityService.GetOfficialsAsync();
-        Activities = await _activityService.GetMyActivitiesAsync(CurrentOfficialId);
+        RecordedForMeCount = await _activityService.CountRecordedForAsync(CurrentOfficialId);
     }
 }
