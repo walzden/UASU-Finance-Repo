@@ -1,0 +1,68 @@
+@page
+@model UASU_VoucherApprovals.Pages.Honoraria.RatesModel
+
+<h3 class="mb-1">Honoraria Rates</h3>
+<p class="text-muted">Monthly amount per union position. The position name must match an official's Role exactly (see Officials) for them to be picked up by Generate Monthly Honoraria.</p>
+
+@if (!string.IsNullOrEmpty(Model.StatusMessage))
+{
+    <div class="alert alert-success">@Model.StatusMessage</div>
+}
+
+<div asp-validation-summary="All" class="text-danger"></div>
+
+<form method="post" style="max-width: 640px;">
+    @* First submit button in the form is what Enter triggers - keep it Save, not the first row's Remove. *@
+    <button type="submit" asp-page-handler="Save" class="visually-hidden" tabindex="-1" aria-hidden="true"></button>
+    <table class="table table-sm align-middle">
+        <thead>
+            <tr>
+                <th>Position</th>
+                <th style="width: 200px;">Amount (KES)</th>
+                <th style="width: 90px;"></th>
+            </tr>
+        </thead>
+        <tbody>
+            @for (var i = 0; i < Model.Rates.Count; i++)
+            {
+                <tr>
+                    <td>
+                        @Model.Rates[i].Role
+                        <input type="hidden" asp-for="Rates[i].Role" />
+                    </td>
+                    <td>
+                        <input asp-for="Rates[i].Amount" type="number" step="0.01" min="0.01" class="form-control form-control-sm text-end" />
+                        <span asp-validation-for="Rates[i].Amount" class="text-danger"></span>
+                    </td>
+                    <td>
+                        <button type="submit" class="btn btn-outline-danger btn-sm"
+                                asp-page-handler="Delete" asp-route-role="@Model.Rates[i].Role"
+                                onclick="return confirm('Remove @Model.Rates[i].Role from the honoraria rates?');">Remove</button>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+    @if (Model.Rates.Count > 0)
+    {
+        <button type="submit" class="btn btn-primary" asp-page-handler="Save">Save amounts</button>
+    }
+</form>
+
+<h4 class="mt-4">Add Position</h4>
+<form method="post" asp-page-handler="Add" class="row g-3" style="max-width: 640px;">
+    <div class="col-md-7">
+        <label class="form-label">Position</label>
+        <input asp-for="NewRate.Role" class="form-control" />
+        <span asp-validation-for="NewRate.Role" class="text-danger"></span>
+    </div>
+    <div class="col-md-5">
+        <label class="form-label">Amount (KES)</label>
+        <input asp-for="NewRate.Amount" type="number" step="0.01" min="0.01" class="form-control" value="" />
+        <span asp-validation-for="NewRate.Amount" class="text-danger"></span>
+    </div>
+    <div class="col-12">
+        <button type="submit" class="btn btn-primary">Add Position</button>
+        <div class="form-text">Adding a position that already exists just updates its amount.</div>
+    </div>
+</form>
