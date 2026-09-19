@@ -1,0 +1,190 @@
+@page
+@model UASU_VoucherApprovals.Pages.Activities.LogModel
+@using UASU_VoucherApprovals.Models
+
+<h3 class="mb-1">Log Activity</h3>
+<p class="text-muted">Record what you did for the union as soon as you do it, while the details are fresh. Every official can log, and nothing is approved at this stage: the treasury later decides which activities are paid under the financial policy, and tells you why when one is not. You do not enter an amount.</p>
+
+@if (!string.IsNullOrEmpty(Model.StatusMessage))
+{
+    <div class="alert alert-success">@Model.StatusMessage</div>
+}
+@if (!string.IsNullOrEmpty(Model.ErrorMessage))
+{
+    <div class="alert alert-danger">@Model.ErrorMessage</div>
+}
+
+@{
+    var mine = Model.Activities;
+    var myLines = mine.SelectMany(a => a.Lines).Where(l => l.OfficialID == Model.CurrentOfficialId).ToList();
+    var recordedForMe = mine.Where(a => a.Logged_By != Model.CurrentOfficialId && a.Lines.Any(l => l.OfficialID == Model.CurrentOfficialId)).ToList();
+    var me = Model.Officials.FirstOrDefault(o => o.OfficialID == Model.CurrentOfficialId);
+}
+
+@if (me is { NotSignedIn: true } && recordedForMe.Count > 0)
+{
+    <div class="alert alert-warning">
+        <strong>Welcome.</strong> Before you first signed in, colleagues recorded @recordedForMe.Count activit@(recordedForMe.Count == 1 ? "y" : "ies") for you (see your history below, marked as recorded by them). Please check they are right and log anything that is missing.
+    </div>
+}
+
+<div class="row g-3 mb-4">
+    <div class="col-6 col-lg-3"><div class="card text-center h-100"><div class="card-body"><div class="fs-4 fw-bold">@mine.Count</div><div class="text-muted small">Activities logged or taken part in</div></div></div></div>
+    <div class="col-6 col-lg-3"><div class="card text-center h-100"><div class="card-body"><div class="fs-4 fw-bold">@myLines.Count(l => l.Decision is null)</div><div class="text-muted small">My lines waiting for the treasury</div></div></div></div>
+    <div class="col-6 col-lg-3"><div class="card text-center h-100"><div class="card-body"><div class="fs-4 fw-bold">@myLines.Count(l => l.Decision == "Pay")</div><div class="text-muted small">My lines paid via a voucher</div></div></div></div>
+    <div class="col-6 col-lg-3"><div class="card text-center h-100"><div class="card-body"><div class="fs-4 fw-bold">@myLines.Count(l => l.Decision == "NotPayable")</div><div class="text-muted small">My lines not payable</div></div></div></div>
+</div>
+
+<div class="row g-4">
+    <div class="col-lg-5">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title">Log an activity</h5>
+                <form method="post" enctype="multipart/form-data" class="row g-3">
+                    <div class="col-6">
+                        <label class="form-label">Date</label>
+                        <input asp-for="Input.Activity_Date" type="date" class="form-control" max="@DateTime.Today.ToString("yyyy-MM-dd")" />
+                        <span asp-validation-for="Input.Activity_Date" class="text-danger"></span>
+                    </div>
+                    <div class="col-6">
+                        <label class="form-label">Days spent</label>
+                        <input asp-for="Input.Days_Spent" type="number" step="0.5" min="0.5" max="31" class="form-control" />
+                        <span asp-validation-for="Input.Days_Spent" class="text-danger"></span>
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label">Type of activity</label>
+                        <select asp-for="Input.Category" class="form-select">
+                            @foreach (var c in ActivityLists.Categories)
+                            {
+                                <option>@c</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label">Short title</label>
+                        <input asp-for="Input.Title" class="form-control" placeholder="e.g. Finance committee meeting" maxlength="200" />
+                        <span asp-validation-for="Input.Title" class="text-danger"></span>
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label">What was done, and what was the outcome?</label>
+                        <textarea asp-for="Input.Details" class="form-control" rows="3" maxlength="2000"></textarea>
+                        <span asp-validation-for="Input.Details" class="text-danger"></span>
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label">Which officials took part?</label>
+                        <div class="border rounded p-2" style="max-height:260px; overflow-y:auto;">
+                            @foreach (var o in Model.Officials)
+                            {
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" name="Input.ParticipantIds" value="@o.OfficialID" id="p_@o.OfficialID"
+                                           checked="@(Model.Input.ParticipantIds.Contains(o.OfficialID))" />
+                                    <label class="form-check-label" for="p_@o.OfficialID">
+                                        @o.FullName <span class="text-muted small">@o.Role</span>
+                                        @if (o.NotSignedIn && o.OfficialID != Model.CurrentOfficialId)
+                                        {
+                                            <span class="badge bg-light text-dark border">not signed in yet</span>
+                                        }
+                                    </label>
+                                </div>
+                            }
+                        </div>
+                        <div class="form-text">One entry covers everyone ticked, and each person gets their own line for the treasury. You do not have to be one of them: officials who have not signed in yet can have their activities recorded by a colleague, and the entry shows who recorded it.</div>
+                    </div>
+                    <div class="col-6">
+                        <label class="form-label">Where</label>
+                        <input asp-for="Input.Place" class="form-control" maxlength="200" />
+                    </div>
+                    <div class="col-6">
+                        <label class="form-label">Who else was involved</label>
+                        <input asp-for="Input.Others_Involved" class="form-control" placeholder="Outside people / bodies" maxlength="300" />
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label">Who authorised it?</label>
+                        <select asp-for="Input.Authorised_By" class="form-select">
+                            @foreach (var a in ActivityLists.AuthorisedBy)
+                            {
+                                <option>@a</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="col-6">
+                        <label class="form-label">Expenses you paid (KES, optional)</label>
+                        <input asp-for="Input.Expenses_Amount" type="number" min="0" step="0.01" class="form-control" />
+                        <span asp-validation-for="Input.Expenses_Amount" class="text-danger"></span>
+                    </div>
+                    <div class="col-6">
+                        <label class="form-label">What were they for?</label>
+                        <input asp-for="Input.Expenses_Note" class="form-control" maxlength="300" />
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label">Evidence (photo, receipt, invitation, minutes, screenshot)</label>
+                        <input type="file" name="Input.Evidence" class="form-control" multiple accept="image/jpeg,image/png,application/pdf" />
+                        <div class="form-text">Up to 5 files, JPEG, PNG or PDF, 5MB each.</div>
+                    </div>
+                    <div class="col-12">
+                        <button type="submit" class="btn btn-primary">Save activity</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-7">
+        <h5>Activity history</h5>
+        @if (mine.Count == 0)
+        {
+            <p class="text-muted">Nothing logged yet.</p>
+        }
+        @foreach (var a in mine)
+        {
+            var open = a.Lines.Count(l => l.Decision is null);
+            var state = open == 0 ? ("Completed", "bg-secondary") : (open == a.Lines.Count ? ("Logged", "bg-primary") : ("Partly processed", "bg-warning text-dark"));
+            <div class="card mb-3">
+                <div class="card-body">
+                    <div class="d-flex flex-wrap align-items-baseline gap-2">
+                        <span class="fw-semibold">@a.Title</span>
+                        <span class="badge @state.Item2">@state.Item1</span>
+                        <span class="ms-auto text-muted small">@a.Activity_ID</span>
+                    </div>
+                    <div class="text-muted small">
+                        Logged by @a.LoggedByName@(a.Lines.Count > 1 || a.Lines.All(l => l.OfficialID != a.Logged_By) ? $" for {a.Lines.Count} official{(a.Lines.Count == 1 ? "" : "s")}" : "")
+                        &middot; @a.Activity_Date.ToString("dd MMM yyyy") &middot; @a.Category &middot; @a.Days_Spent.ToString("0.#") day(s)@(string.IsNullOrEmpty(a.Place) ? "" : " · " + a.Place)
+                    </div>
+                    <p class="mt-2 mb-1">@a.Details</p>
+                    <div class="text-muted small">
+                        Authorised by: @a.Authorised_By@(string.IsNullOrEmpty(a.Others_Involved) ? "" : " · With: " + a.Others_Involved)@(a.Expenses_Amount > 0 ? $" · Expenses reported: {a.Expenses_Amount:N2} ({a.Expenses_Note})" : "")
+                    </div>
+                    @if (a.Evidence.Count > 0)
+                    {
+                        <div class="mt-1">
+                            @foreach (var e in a.Evidence)
+                            {
+                                <a class="badge bg-light text-dark border text-decoration-none me-1" asp-page="/Activities/Evidence" asp-route-id="@e.Evidence_ID">&#128206; @e.File_Name</a>
+                            }
+                        </div>
+                    }
+                    <div class="border-top mt-2 pt-2 small">
+                        @foreach (var l in a.Lines)
+                        {
+                            <div>
+                                <strong>@l.FullName</strong>@if (l.NotSignedIn && l.OfficialID != a.Logged_By) { <span class="text-muted"> (recorded for them by @a.LoggedByName)</span> }:
+                                @if (l.Voucher_ID is not null)
+                                {
+                                    <span>Paid via voucher @l.Voucher_ID &middot; @l.VoucherStatus</span>
+                                }
+                                else if (l.Decision == "NotPayable")
+                                {
+                                    <span><strong>Not payable:</strong> @l.Reason</span>
+                                }
+                                else
+                                {
+                                    <span class="text-muted">Waiting for the treasury's decision</span>
+                                }
+                            </div>
+                        }
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+</div>

@@ -43,7 +43,10 @@ public class VoucherInputModel
     [Range(0.01, double.MaxValue, ErrorMessage = "Amount must be greater than zero.")]
     public decimal Amount { get; set; }
 
-    [MaxLength(255)]
+    // Widened from 255 (SQL/029) so one voucher can list the dates of several
+    // aggregated activities - keep in step with Vouchers.Description and
+    // Payments.Description (income vouchers copy it into the payment).
+    [MaxLength(1000)]
     public string? Description { get; set; }
 
     // When set, this voucher is a payment toward an existing debt.
