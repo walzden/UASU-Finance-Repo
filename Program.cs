@@ -31,7 +31,11 @@ builder.Services
     {
         options.LoginPath = "/Account/Login";
         options.AccessDeniedPath = "/Account/AccessDenied";
-        options.ExpireTimeSpan = TimeSpan.FromHours(8);
+        // Idle timeout, not a hard session cap: SlidingExpiration renews the
+        // cookie on activity, so this only logs someone out after 30 minutes
+        // with no requests at all - see wwwroot/js/idle-timeout.js for the
+        // client-side warning shown before that happens.
+        options.ExpireTimeSpan = TimeSpan.FromMinutes(30);
         options.SlidingExpiration = true;
         // Set to Always once the app is served over HTTPS in production
         // (Cloudflare Tunnel / your reverse proxy terminates TLS).

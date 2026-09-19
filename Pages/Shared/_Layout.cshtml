@@ -90,6 +90,25 @@
                         </li>
                     </ul>
                 </div>
+
+                <div class="modal fade" id="idleTimeoutModal" tabindex="-1" aria-labelledby="idleTimeoutModalLabel" aria-hidden="true">
+                    <div class="modal-dialog modal-dialog-centered">
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <h5 class="modal-title" id="idleTimeoutModalLabel">Still there?</h5>
+                            </div>
+                            <div class="modal-body">
+                                <p class="mb-0">You've been idle for a while. For security, you'll be logged out in <strong id="idleTimeoutCountdown">60</strong> seconds.</p>
+                            </div>
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-outline-secondary" id="idleTimeoutLogoutBtn">Log out now</button>
+                                <button type="button" class="btn btn-primary" id="idleTimeoutStayBtn">Stay signed in</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <form id="idle-logout-form" method="post" asp-page="/Account/Logout" class="d-none"></form>
+                <script src="~/js/idle-timeout.js" defer></script>
             }
         </div>
     </nav>
