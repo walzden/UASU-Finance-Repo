@@ -2,9 +2,49 @@
 @model UASU_VoucherApprovals.Pages.Reports.DebtsModel
 @using UASU_VoucherApprovals.Pages.Reports
 
-<h3 class="mb-3">Debt Status</h3>
+@{
+    var printPeriodText = Model.PeriodType == DebtPeriodType.All || Model.Period is null
+        ? "All periods"
+        : DebtsModel.PeriodLabel(Model.Period, Model.PeriodType);
+}
 
-<ul class="nav nav-tabs mb-3">
+<style>
+    /* Bootstrap's accordion-button assumes a single line of text; the
+       count/total badges need to sit at the far right of the same row. */
+    .accordion-button { display: flex; align-items: center; gap: .25rem; }
+
+    /* Print / Save as PDF: only the unsettled debts table, under a
+       letterhead. The Settled group, filters, summary cards and buttons
+       are hidden, and the Unpaid panel is forced open even if it was
+       collapsed on screen. Badges keep their colours - browsers drop
+       backgrounds when printing unless told otherwise, which would leave
+       white badge text invisible. */
+    @@media print {
+        .accordion-header { display: none !important; }
+        #unpaidGroup.collapse { display: block !important; height: auto !important; }
+        .accordion, .accordion-item { border: 0 !important; }
+        table { font-size: 12px; }
+        tr { break-inside: avoid; }
+        thead { display: table-header-group; }
+        .badge { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    }
+</style>
+
+<h3 class="mb-3 d-print-none">Debt Status</h3>
+
+<div class="d-none d-print-block mb-3">
+    <div class="d-flex align-items-center gap-3">
+        <img src="~/images/uasu-Logo.jpg" alt="UASU logo" style="height:55px;"
+             onerror="this.onerror=null; this.src='/images/uasu-logo-placeholder.svg';" />
+        <div class="text-center flex-grow-1">
+            <h4 class="fw-bold mb-0">UNIVERSITIES' ACADEMIC STAFF UNION</h4>
+            <h5 class="mb-0">STATEMENT OF UNSETTLED DEBTS</h5>
+            <div class="small text-muted">@printPeriodText &middot; As at @DateTime.Today.ToString("d MMMM yyyy")</div>
+        </div>
+    </div>
+</div>
+
+<ul class="nav nav-tabs mb-3 d-print-none">
     @foreach (var pt in Enum.GetValues<DebtPeriodType>())
     {
         <li class="nav-item">
@@ -15,7 +55,7 @@
 
 @if (Model.PeriodType != DebtPeriodType.All)
 {
-    <form method="get" class="row g-2 align-items-end mb-3">
+    <form method="get" class="row g-2 align-items-end mb-3 d-print-none">
         <input type="hidden" name="periodType" value="@Model.PeriodType" />
         <div class="col-auto">
             <label class="form-label mb-0">@Model.PeriodType</label>
@@ -35,7 +75,7 @@
 }
 else
 {
-    <div class="row g-3 mb-4">
+    <div class="row g-3 mb-4 d-print-none">
         <div class="col-sm-6 col-lg-3">
             <div class="card text-center h-100">
                 <div class="card-body">
@@ -70,10 +110,14 @@ else
         </div>
     </div>
 
-    <a class="btn btn-outline-secondary mb-3" href="?periodType=@Model.PeriodType&period=@Model.Period&handler=ExportCsv">Export CSV</a>
+    <div class="mb-3 d-print-none">
+        <a class="btn btn-outline-secondary" href="?periodType=@Model.PeriodType&period=@Model.Period&handler=ExportCsv">Export CSV</a>
+        <button type="button" class="btn btn-primary ms-1" onclick="window.print()">Print / Save as PDF</button>
+        <span class="form-text ms-2">Prints the unsettled debts for the period selected above.</span>
+    </div>
 
     <div class="accordion mb-3" id="debtGroups">
-        <div class="accordion-item">
+        <div class="accordion-item d-print-none">
             <h2 class="accordion-header">
                 <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#settledGroup">
                     <span class="badge bg-success me-2">&nbsp;</span>
@@ -207,9 +251,3 @@ else
         </div>
     </div>
 }
-
-<style>
-    /* Bootstrap's accordion-button assumes a single line of text; the
-       count/total badges need to sit at the far right of the same row. */
-    .accordion-button { display: flex; align-items: center; gap: .25rem; }
-</style>
