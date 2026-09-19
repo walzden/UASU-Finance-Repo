@@ -144,6 +144,7 @@
     <div class="col-12">
         <label class="form-label">Description</label>
         <textarea asp-for="Input.Description" class="form-control" rows="2"></textarea>
+        <span asp-validation-for="Input.Description" class="text-danger"></span>
         <div class="form-text">Prefilled from the debt's own description when paying toward a debt - edit if this particular voucher needs something more specific (e.g. "installment 2 of 3").</div>
     </div>
 
