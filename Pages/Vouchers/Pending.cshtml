@@ -6,6 +6,7 @@
     @if (Model.Vouchers.Any())
     {
         <span class="badge bg-primary rounded-pill">@Model.Vouchers.Count() pending</span>
+        <span class="badge bg-secondary rounded-pill">Total Sh. @Model.Vouchers.Sum(v => v.Amount).ToString("N2")</span>
     }
 </div>
 <p class="text-muted mb-3">Every voucher still awaiting approval. Fix a typo or missing detail before it gets rejected for it &mdash; but only while nobody has approved it yet.</p>
@@ -195,6 +196,22 @@ else
                 }
             }
         </tbody>
+        <tfoot class="table-light fw-bold">
+            @{
+                var incomeCount = Model.Vouchers.Count(v => v.Transaction_Type == "Income");
+            }
+            <tr>
+                <td colspan="5" class="text-end">
+                    Total pending (@Model.Vouchers.Count() @(Model.Vouchers.Count() == 1 ? "voucher" : "vouchers"))
+                    @if (incomeCount > 0)
+                    {
+                        <span class="fw-normal text-muted small">&mdash; includes @incomeCount income @(incomeCount == 1 ? "voucher" : "vouchers")</span>
+                    }
+                </td>
+                <td class="text-end">@Model.Vouchers.Sum(v => v.Amount).ToString("N2")</td>
+                <td colspan="3"></td>
+            </tr>
+        </tfoot>
     </table>
 }
 
