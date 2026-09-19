@@ -8,6 +8,14 @@
     <td>@Model.Amount.ToString("N2")</td>
     <td>
         @Model.Description
+        @if (Model.IsOwnVoucher)
+        {
+            <div class="small text-danger mt-1"><strong>Flag:</strong> you are the payee on this voucher. You may approve it, but it will be a flagged self-approval and the other approver must still sign off separately.</div>
+        }
+        else if (Model.PayeeRole is "Chairman" or "Chapter Secretary")
+        {
+            <div class="small text-warning-emphasis mt-1"><strong>Flag:</strong> the payee is the @Model.PayeeRole (an approver). They may sign it too, as a flagged self-approval, so your independent sign-off is still needed.</div>
+        }
         @if (!string.IsNullOrWhiteSpace(Model.Supersedes_Voucher_ID))
         {
             <div class="small text-muted mt-1">

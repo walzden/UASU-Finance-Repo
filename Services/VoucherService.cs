@@ -77,6 +77,8 @@ public class VoucherService : IVoucherService
                  WHERE va2.Voucher_ID = v.Supersedes_Voucher_ID AND va2.Approval_Status = 'Rejected'
                  ORDER BY va2.Approval_Date DESC) AS SupersededRejectionReason,
                 bc.Budget_ID, bc.Category_Name AS Budget_Category,
+                o.Role AS PayeeRole,
+                CASE WHEN v.Official_Link = @OfficialID THEN 1 ELSE 0 END AS IsOwnVoucher,
                 -- Monday of the week VoucherDate falls in, computed via
                 -- the classic day-zero-was-a-Monday trick so it's
                 -- independent of the server's @@DATEFIRST/locale setting

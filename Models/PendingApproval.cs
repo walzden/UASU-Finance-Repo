@@ -30,6 +30,13 @@ public class PendingApproval
     // what was wrong last time rather than voting blind.
     public string? Supersedes_Voucher_ID { get; set; }
     public string? SupersededRejectionReason { get; set; }
+
+    // The payee's own role, and whether the payee is the approver looking
+    // at this voucher. An approver may still approve a voucher payable to
+    // themselves (the other role must sign off separately), but the page
+    // flags it so it is never approved unknowingly.
+    public string? PayeeRole { get; set; }
+    public bool IsOwnVoucher { get; set; }
 }
 
 // Payload posted from the Approve/Reject buttons.

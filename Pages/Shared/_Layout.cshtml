@@ -23,9 +23,15 @@
                 </button>
                 <div class="collapse navbar-collapse" id="mainNavbar">
                     <ul class="navbar-nav me-auto">
+                        @* Its own top-level item so every signed-in official sees it straight away. *@
+                        <li class="nav-item"><a class="nav-link" href="/Activities/Log">Log Activity</a></li>
                         @if (User.IsInRole("Chairman") || User.IsInRole("Chapter Secretary"))
                         {
                             <li class="nav-item"><a class="nav-link" href="/Approvals">Pending Approvals</a></li>
+                        }
+                        @if (isTreasuryAdmin)
+                        {
+                            <li class="nav-item"><a class="nav-link" href="/Activities/Decide">Activity Decisions</a></li>
                         }
                         @if (isTreasuryAdmin)
                         {
