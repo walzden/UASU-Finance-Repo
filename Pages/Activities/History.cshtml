@@ -1,0 +1,92 @@
+@page
+@model UASU_VoucherApprovals.Pages.Activities.HistoryModel
+
+<h3 class="mb-1">Activity history</h3>
+<p class="text-muted">Everything you have logged or taken part in, and what the treasury decided for each line: waiting, paid on a voucher, or not payable with the reason.</p>
+
+<div class="row g-3 mb-4">
+    <div class="col-6 col-lg-3"><div class="card text-center h-100"><div class="card-body"><div class="fs-4 fw-bold">@Model.Counts["all"]</div><div class="text-muted small">Activities logged or taken part in</div></div></div></div>
+    <div class="col-6 col-lg-3"><div class="card text-center h-100"><div class="card-body"><div class="fs-4 fw-bold">@Model.MyWaiting</div><div class="text-muted small">My lines waiting for the treasury</div></div></div></div>
+    <div class="col-6 col-lg-3"><div class="card text-center h-100"><div class="card-body"><div class="fs-4 fw-bold">@Model.MyPaid</div><div class="text-muted small">My lines paid via a voucher</div></div></div></div>
+    <div class="col-6 col-lg-3"><div class="card text-center h-100"><div class="card-body"><div class="fs-4 fw-bold">@Model.MyNotPayable</div><div class="text-muted small">My lines not payable</div></div></div></div>
+</div>
+
+@{
+    var tabs = new (string Key, string Label)[]
+    {
+        ("all", "All"), ("waiting", "Waiting for the treasury"), ("paid", "Paid"), ("no", "Not payable")
+    };
+}
+<ul class="nav nav-tabs mb-3">
+    @foreach (var t in tabs)
+    {
+        <li class="nav-item">
+            <a class="nav-link @(Model.Filter == t.Key ? "active" : "")" asp-page="/Activities/History" asp-route-filter="@t.Key">
+                @t.Label <span class="badge rounded-pill bg-light text-dark border">@Model.Counts[t.Key]</span>
+            </a>
+        </li>
+    }
+</ul>
+
+@if (Model.Shown.Count == 0)
+{
+    <p class="text-muted">@(Model.Filter == "all" ? "Nothing logged yet." : "Nothing here for this filter.")
+        @if (Model.Filter == "all") { <a asp-page="/Activities/Log">Log an activity</a> }
+    </p>
+}
+
+<div class="row row-cols-1 row-cols-xl-2 g-3">
+    @foreach (var a in Model.Shown)
+    {
+        var open = a.Lines.Count(l => l.Decision is null);
+        var state = open == 0 ? ("Completed", "bg-secondary") : (open == a.Lines.Count ? ("Logged", "bg-primary") : ("Partly processed", "bg-warning text-dark"));
+        <div class="col">
+            <div class="card h-100">
+                <div class="card-body">
+                    <div class="d-flex flex-wrap align-items-baseline gap-2">
+                        <span class="fw-semibold">@a.Title</span>
+                        <span class="badge @state.Item2">@state.Item1</span>
+                        <span class="ms-auto text-muted small">@a.Activity_ID</span>
+                    </div>
+                    <div class="text-muted small">
+                        Logged by @a.LoggedByName@(a.Lines.Count > 1 || a.Lines.All(l => l.OfficialID != a.Logged_By) ? $" for {a.Lines.Count} official{(a.Lines.Count == 1 ? "" : "s")}" : "")
+                        &middot; @a.Activity_Date.ToString("dd MMM yyyy") &middot; @a.Category &middot; @a.Days_Spent.ToString("0.#") day(s)@(string.IsNullOrEmpty(a.Place) ? "" : " · " + a.Place)
+                    </div>
+                    <p class="mt-2 mb-1">@a.Details</p>
+                    <div class="text-muted small">
+                        Authorised by: @a.Authorised_By@(string.IsNullOrEmpty(a.Others_Involved) ? "" : " · With: " + a.Others_Involved)@(a.Expenses_Amount > 0 ? $" · Expenses reported: {a.Expenses_Amount:N2} ({a.Expenses_Note})" : "")
+                    </div>
+                    @if (a.Evidence.Count > 0)
+                    {
+                        <div class="mt-1">
+                            @foreach (var e in a.Evidence)
+                            {
+                                <a class="badge bg-light text-dark border text-decoration-none me-1" asp-page="/Activities/Evidence" asp-route-id="@e.Evidence_ID">&#128206; @e.File_Name</a>
+                            }
+                        </div>
+                    }
+                    <div class="border-top mt-2 pt-2 small">
+                        @foreach (var l in a.Lines)
+                        {
+                            <div>
+                                <strong>@l.FullName</strong>@if (l.NotSignedIn && l.OfficialID != a.Logged_By) { <span class="text-muted"> (recorded for them by @a.LoggedByName)</span> }:
+                                @if (l.Voucher_ID is not null)
+                                {
+                                    <span>Paid via voucher @l.Voucher_ID &middot; @l.VoucherStatus</span>
+                                }
+                                else if (l.Decision == "NotPayable")
+                                {
+                                    <span><strong>Not payable:</strong> @l.Reason</span>
+                                }
+                                else
+                                {
+                                    <span class="text-muted">Waiting for the treasury's decision</span>
+                                }
+                            </div>
+                        }
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+</div>
