@@ -595,10 +595,34 @@ public class VoucherService : IVoucherService
         // mistyping) a name the app already knows. Left NULL when a
         // payment's allocations span more than one distinct payee, since
         // there's no single right answer to prefill in that case.
+        //
+        // The label also carries the payment date, the payee and the
+        // budget line(s) it covers, so several payments of the same amount
+        // and mode can be told apart by when they were made, to whom, and
+        // what they were for. A payment spanning several payees shows how
+        // many rather than listing them all; one payment can also settle
+        // vouchers under more than one budget line, so each distinct
+        // budget name is listed.
         const string sql = @"
             SELECT
                 p.Payment_ID AS Id,
-                p.Payment_ID + ' - ' + FORMAT(p.Amount_Paid,'N2') + ' - ' + p.Payment_Mode AS Label,
+                p.Payment_ID + ' - ' + FORMAT(p.Payment_Date,'dd MMM yyyy') + ' - ' + FORMAT(p.Amount_Paid,'N2') + ' - ' + p.Payment_Mode
+                    + ISNULL(' - ' + CASE
+                        WHEN COUNT(DISTINCT COALESCE(o.FullName, s.Business_Name, v.Manual_Payee_Name)) = 1
+                            THEN MIN(COALESCE(o.FullName, s.Business_Name, v.Manual_Payee_Name))
+                        WHEN COUNT(DISTINCT COALESCE(o.FullName, s.Business_Name, v.Manual_Payee_Name)) > 1
+                            THEN CAST(COUNT(DISTINCT COALESCE(o.FullName, s.Business_Name, v.Manual_Payee_Name)) AS VARCHAR(10)) + ' payees'
+                        ELSE NULL END, '')
+                    + ISNULL(' - ' + (
+                        SELECT STRING_AGG(b.Category_Name, ', ')
+                        FROM (
+                            SELECT DISTINCT LTRIM(RTRIM(bc.Category_Name)) AS Category_Name
+                            FROM PaymentAllocations al2
+                            INNER JOIN Vouchers v2 ON v2.Voucher_ID = al2.Voucher_ID
+                            INNER JOIN Ref_BudgetCodes bc ON bc.Budget_ID = v2.Budget_Link
+                            WHERE al2.Payment_ID = p.Payment_ID
+                        ) b
+                    ), '') AS Label,
                 CASE WHEN COUNT(DISTINCT COALESCE(o.FullName, s.Business_Name, v.Manual_Payee_Name)) = 1
                      THEN MIN(COALESCE(o.FullName, s.Business_Name, v.Manual_Payee_Name))
                      ELSE NULL END AS PayeeName
