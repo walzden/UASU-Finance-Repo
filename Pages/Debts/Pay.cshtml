@@ -1,0 +1,186 @@
+@page
+@model UASU_VoucherApprovals.Pages.Debts.PayModel
+@using UASU_VoucherApprovals.Models
+
+<h3 class="mb-1">Pay Debts</h3>
+<p class="text-muted">
+    Debts owed to officials that have no voucher yet, mostly from <a asp-page="/Activities/Decide">Activity Decisions</a>.
+    Tick the debts to pay and choose a budget item for each. <strong>One voucher pays all the ticked debts of one official that share a budget item</strong>;
+    ticked debts under different budget items become separate vouchers. Each voucher then goes to the Chairman and Chapter Secretary for approval.
+    You cannot raise a voucher for a debt owed to you.
+</p>
+
+@if (!string.IsNullOrEmpty(Model.StatusMessage))
+{
+    <div class="alert alert-success">@Model.StatusMessage</div>
+}
+@if (Model.Errors.Count > 0)
+{
+    <div class="alert alert-danger">
+        <ul class="mb-0">
+            @foreach (var e in Model.Errors)
+            {
+                <li>@e</li>
+            }
+        </ul>
+    </div>
+}
+
+@if (Model.Debts.Count == 0)
+{
+    <div class="alert alert-light border">No debts are waiting for a voucher.</div>
+}
+else
+{
+    var index = 0;
+
+    <form method="post" id="payForm">
+        <div class="row g-2 align-items-end mb-3">
+            <div class="col-auto">
+                <label class="form-label mb-0">Voucher date</label>
+                <input type="date" name="VoucherDate" class="form-control" value="@((Model.VoucherDate ?? DateTime.Today).ToString("yyyy-MM-dd"))" />
+            </div>
+        </div>
+
+        @foreach (var group in Model.Debts.GroupBy(d => d.OfficialID))
+        {
+            var first = group.First();
+            var own = first.OfficialID == Model.CurrentOfficialId;
+
+            <div class="card mb-3">
+                <div class="card-header d-flex flex-wrap align-items-center gap-2">
+                    <strong>@first.FullName@(own ? " (you)" : "")</strong>
+                    <span class="text-muted small">@group.Count() debt@(group.Count() == 1 ? "" : "s") &middot; Sh. @group.Sum(d => d.Total_Owed).ToString("N2")</span>
+                    @if (first.NotSignedIn)
+                    {
+                        <span class="badge bg-light text-dark border">Has not signed in yet</span>
+                    }
+                    @if (first.Role is "Chairman" or "Chapter Secretary")
+                    {
+                        <span class="badge bg-warning text-dark">Payee is the @first.Role (an approver)</span>
+                    }
+                    @if (!own)
+                    {
+                        <span class="ms-auto">
+                            <select class="form-select form-select-sm d-inline-block w-auto" onchange="applyBudget(this)">
+                                <option value="">Same budget item for all...</option>
+                                @foreach (var b in Model.BudgetOptions)
+                                {
+                                    <option value="@b.Id">@b.Label</option>
+                                }
+                            </select>
+                        </span>
+                    }
+                </div>
+
+                @if (own)
+                {
+                    <div class="card-body text-muted small">
+                        These debts are owed to you, so you cannot raise their vouchers. The other treasury officer will:
+                        @string.Join("; ", group.Select(d => d.Debt_ID + " (Sh. " + d.Total_Owed.ToString("N2") + ")")).
+                    </div>
+                }
+                else
+                {
+                    <div class="table-responsive">
+                        <table class="table table-sm align-middle mb-0" style="min-width: 800px;">
+                            <tbody>
+                                @foreach (var d in group)
+                                {
+                                    var p = Model.PostedFor(d.Debt_ID);
+                                    <tr data-debt="1">
+                                        <td style="width:2rem;">
+                                            <input type="hidden" name="Rows[@index].Debt_ID" value="@d.Debt_ID" />
+                                            <input type="checkbox" name="Rows[@index].Selected" value="true" class="form-check-input pick" checked="@p.Selected" />
+                                            <input type="hidden" name="Rows[@index].Selected" value="false" />
+                                        </td>
+                                        <td style="width:90px;">@d.Debt_ID</td>
+                                        <td style="width:110px;">@d.Date_Incurred.ToString("dd MMM yyyy")</td>
+                                        <td>
+                                            @d.Description
+                                            @if (!string.IsNullOrEmpty(d.Activity_ID))
+                                            {
+                                                <div class="text-muted small">@d.Category &middot; decided by @d.DecidedByName</div>
+                                            }
+                                            <div class="text-muted small">@d.DaysOld day(s) old</div>
+                                        </td>
+                                        <td class="text-end" style="width:120px;">@d.Total_Owed.ToString("N2")</td>
+                                        <td style="width:260px;">
+                                            <select name="Rows[@index].Budget_Link" class="form-select form-select-sm budget">
+                                                <option value="">Budget item...</option>
+                                                @foreach (var b in Model.BudgetOptions)
+                                                {
+                                                    <option value="@b.Id" selected="@(p.Budget_Link == b.Id)">@b.Label</option>
+                                                }
+                                            </select>
+                                        </td>
+                                    </tr>
+                                    index++;
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </div>
+        }
+
+        <div class="mb-3">
+            <button type="submit" class="btn btn-outline-primary" asp-page-handler="Preview">Preview vouchers</button>
+        </div>
+
+        @if (Model.ShowPreview)
+        {
+            <div class="card border-primary mb-3">
+                <div class="card-body">
+                    <h5 class="card-title">Preview</h5>
+                    <table class="table table-sm align-middle">
+                        <thead class="table-light">
+                            <tr><th>Payee</th><th>Budget item</th><th>Debts paid</th><th>Description</th><th class="text-end">Amount (KES)</th></tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var plan in Model.Plans)
+                            {
+                                <tr>
+                                    <td>
+                                        @plan.OfficialName
+                                        @if (plan.OfficialRole is "Chairman" or "Chapter Secretary")
+                                        {
+                                            <div><span class="badge bg-warning text-dark">Payee is the @plan.OfficialRole (an approver)</span></div>
+                                        }
+                                    </td>
+                                    <td>@plan.BudgetLabel</td>
+                                    <td>@string.Join(", ", plan.Debts.Select(x => x.Debt_ID))</td>
+                                    <td>
+                                        @plan.Description
+                                        <div class="text-muted small">
+                                            @plan.Description.Length/@UASU_VoucherApprovals.Utilities.ActivityDescription.MaxLength characters@(plan.DescriptionShortened ? " · shortened to fit; the debts stay linked to the voucher" : "")
+                                        </div>
+                                    </td>
+                                    <td class="text-end">@plan.Amount.ToString("N2")</td>
+                                </tr>
+                            }
+                        </tbody>
+                        <tfoot class="table-light fw-bold">
+                            <tr>
+                                <td colspan="4">Total (@Model.Plans.Count voucher@(Model.Plans.Count == 1 ? "" : "s"))</td>
+                                <td class="text-end">@Model.Plans.Sum(v => v.Amount).ToString("N2")</td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                    <button type="submit" class="btn btn-success" asp-page-handler="Create"
+                            onclick="return confirm('Create @Model.Plans.Count voucher(s) for approval?');">Create vouchers</button>
+                </div>
+            </div>
+        }
+    </form>
+}
+
+<script>
+    function applyBudget(sel) {
+        if (!sel.value) return;
+        sel.closest('.card').querySelectorAll('tr[data-debt]').forEach(function (tr) {
+            tr.querySelector('.budget').value = sel.value;
+        });
+        sel.selectedIndex = 0;
+    }
+</script>

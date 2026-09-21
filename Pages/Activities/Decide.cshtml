@@ -6,9 +6,9 @@
 <h3 class="mb-1">Activity Decisions</h3>
 <p class="text-muted">
     Every logged activity lands here as one line per official. Apply the financial policy to each line:
-    <strong>Pay</strong> (pick the budget item and type the amount) or <strong>Not payable</strong> (give the policy reason, which the official can see).
-    Pay lines become vouchers, one per official per budget item, and go to the Chairman and Chapter Secretary for approval.
-    You never decide your own lines: the Treasurer's are decided by the Deputy Treasurer, and the Deputy's by the Treasurer.
+    <strong>Pay</strong> (type the amount owed) or <strong>Not payable</strong> (give the policy reason, which the official can see).
+    <strong>Pay creates a debt</strong> owed to that official, one per line; you raise the voucher later from <a asp-page="/Debts/Pay">Pay Debts</a>,
+    where the Chairman and Chapter Secretary approve it. You never decide your own lines: the Treasurer's are decided by the Deputy Treasurer, and the Deputy's by the Treasurer.
 </p>
 
 @if (!string.IsNullOrEmpty(Model.StatusMessage))
@@ -51,23 +51,6 @@ else
 
     <form method="post" id="decideForm">
         <input type="hidden" name="Month" value="@Model.Month" />
-
-        <div class="row g-2 align-items-end mb-3">
-            <div class="col-auto">
-                <label class="form-label mb-0">Voucher date</label>
-                <input type="date" name="VoucherDate" class="form-control" value="@((Model.VoucherDate ?? DateTime.Today).ToString("yyyy-MM-dd"))" />
-            </div>
-            <div class="col-auto">
-                <label class="form-label mb-0">Shortcut: same budget item on every Pay line</label>
-                <select class="form-select" onchange="applyBudget(this)">
-                    <option value="">-- choose to apply --</option>
-                    @foreach (var b in Model.BudgetOptions)
-                    {
-                        <option value="@b.Id">@b.Label</option>
-                    }
-                </select>
-            </div>
-        </div>
 
         @foreach (var group in Model.OpenLines.GroupBy(l => l.OfficialID))
         {
@@ -127,21 +110,14 @@ else
                                         <input type="hidden" name="Lines[@index].OfficialID" value="@l.OfficialID" />
                                         <select name="Lines[@index].Decision" class="form-select form-select-sm decision" onchange="decChanged(this)">
                                             <option value="">Decide...</option>
-                                            <option value="Pay" selected="@(p.Decision == "Pay")">Pay</option>
+                                            <option value="Pay" selected="@(p.Decision == "Pay")">Pay (create a debt)</option>
                                             <option value="NotPayable" selected="@(p.Decision == "NotPayable")">Not payable</option>
                                         </select>
                                     </td>
                                     <td style="width:360px;">
                                         <span class="text-muted small undecided">Choose a decision</span>
-                                        <div class="pay" style="display:none; grid-template-columns: 1fr 120px; gap:6px;">
-                                            <select name="Lines[@index].Budget_Link" class="form-select form-select-sm budget">
-                                                <option value="">Budget item...</option>
-                                                @foreach (var b in Model.BudgetOptions)
-                                                {
-                                                    <option value="@b.Id" selected="@(p.Budget_Link == b.Id)">@b.Label</option>
-                                                }
-                                            </select>
-                                            <input name="Lines[@index].Amount" type="number" min="0" step="100" class="form-control form-control-sm text-end" placeholder="Amount (KES)" value="@(p.Amount?.ToString("0.##"))" />
+                                        <div class="pay" style="display:none;">
+                                            <input name="Lines[@index].Amount" type="number" min="0" step="100" class="form-control form-control-sm text-end" placeholder="Amount owed (KES)" value="@(p.Amount?.ToString("0.##"))" />
                                         </div>
                                         <div class="no" style="display:none;">
                                             <select class="form-select form-select-sm mb-1" onchange="presetChanged(this)">
@@ -174,45 +150,40 @@ else
                 <div class="card-body">
                     <h5 class="card-title">Preview</h5>
 
-                    @if (Model.Plans.Count > 0)
+                    @if (Model.PayPreview.Count > 0)
                     {
                         <table class="table table-sm align-middle">
                             <thead class="table-light">
-                                <tr><th>Payee</th><th>Budget item</th><th>Description</th><th class="text-end">Amount (KES)</th></tr>
+                                <tr><th>Debt owed to</th><th>Activity</th><th>Date</th><th class="text-end">Amount (KES)</th></tr>
                             </thead>
                             <tbody>
-                                @foreach (var plan in Model.Plans)
+                                @foreach (var (line, d) in Model.PayPreview)
                                 {
                                     <tr>
                                         <td>
-                                            @plan.OfficialName
-                                            @if (plan.OfficialRole is "Chairman" or "Chapter Secretary")
+                                            @line.FullName
+                                            @if (line.Role is "Chairman" or "Chapter Secretary")
                                             {
-                                                <div><span class="badge bg-warning text-dark">Payee is the @plan.OfficialRole (an approver)</span></div>
+                                                <div><span class="badge bg-warning text-dark">Payee is the @line.Role (an approver)</span></div>
                                             }
                                         </td>
-                                        <td>@plan.BudgetLabel</td>
-                                        <td>
-                                            @plan.Description
-                                            <div class="text-muted small">
-                                                @plan.Description.Length/@ActivityDescription.MaxLength characters@(plan.DescriptionShortened ? " · shortened to fit; the full list of activities stays linked to the voucher" : "")
-                                            </div>
-                                        </td>
-                                        <td class="text-end">@plan.Amount.ToString("N2")</td>
+                                        <td>@line.Title</td>
+                                        <td>@line.Activity_Date.ToString("dd MMM yyyy")</td>
+                                        <td class="text-end">@d.Amount!.Value.ToString("N2")</td>
                                     </tr>
                                 }
                             </tbody>
                             <tfoot class="table-light fw-bold">
                                 <tr>
-                                    <td colspan="3">Total (@Model.Plans.Count voucher@(Model.Plans.Count == 1 ? "" : "s"))</td>
-                                    <td class="text-end">@Model.Plans.Sum(v => v.Amount).ToString("N2")</td>
+                                    <td colspan="3">Total (@Model.PayPreview.Count debt@(Model.PayPreview.Count == 1 ? "" : "s"))</td>
+                                    <td class="text-end">@Model.PayPreview.Sum(x => x.Decision.Amount!.Value).ToString("N2")</td>
                                 </tr>
                             </tfoot>
                         </table>
                     }
                     else
                     {
-                        <p class="text-muted">No vouchers, only decisions.</p>
+                        <p class="text-muted">No debts, only decisions.</p>
                     }
 
                     @if (Model.NotPayablePreview.Count > 0)
@@ -228,9 +199,9 @@ else
                         </div>
                     }
 
-                    <p class="text-muted small">The vouchers are sent to the Chairman and Chapter Secretary for approval. Where the payee is one of them, the voucher is flagged for the approvers.</p>
+                    <p class="text-muted small">One debt is created per line, so each stays traceable to its activity. <strong>No voucher is created yet</strong>: the debts appear under <a asp-page="/Debts/Pay">Pay Debts</a>, where you choose the budget item and raise the voucher. The Chairman and Chapter Secretary approve the voucher, not the debt.</p>
                     <button type="submit" class="btn btn-success" asp-page-handler="Create"
-                            onclick="return confirm('Create @Model.Plans.Count voucher(s) and record these decisions?');">Create vouchers and record decisions</button>
+                            onclick="return confirm('Create @Model.PayPreview.Count debt(s) and record these decisions?');">Create debts and record decisions</button>
                 </div>
             </div>
         }
@@ -248,13 +219,6 @@ else
     function presetChanged(sel) {
         if (sel.value === '') return;
         sel.closest('tr').querySelector('.reason').value = sel.value;
-        sel.selectedIndex = 0;
-    }
-    function applyBudget(sel) {
-        if (!sel.value) return;
-        document.querySelectorAll('tr[data-line]').forEach(function (tr) {
-            if (tr.querySelector('.decision').value === 'Pay') tr.querySelector('.budget').value = sel.value;
-        });
         sel.selectedIndex = 0;
     }
     document.querySelectorAll('.decision').forEach(decChanged);

@@ -56,6 +56,12 @@ public class DebtService : IDebtService
             LEFT JOIN Ref_Officials o ON o.OfficialID = ds.Official_Link
             LEFT JOIN Ref_Suppliers s ON s.Supplier_ID = ds.Supplier_Link
             WHERE ds.Balance > 0
+              -- A debt already on a live (not rejected) voucher raised from Pay Debts is
+              -- spoken for; offering it here too would let it be paid twice.
+              AND NOT EXISTS (
+                    SELECT 1 FROM VoucherDebts vd
+                    WHERE vd.Debt_ID = ds.Debt_ID
+                      AND NOT EXISTS (SELECT 1 FROM Voucher_Approvals va WHERE va.Voucher_ID = vd.Voucher_ID AND va.Approval_Status = 'Rejected'))
             ORDER BY ds.Date_Incurred;";
 
         return await conn.QueryAsync<DebtOption>(sql);

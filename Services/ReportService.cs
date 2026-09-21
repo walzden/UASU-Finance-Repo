@@ -343,9 +343,11 @@ public class ReportService : IReportService
     // has no equivalent existing "as at a date" source (DebtSummary has
     // no cutoff - it's always "as of right now"), so it's computed here
     // directly: a debt counts only if incurred by AsOfDate, and only the
-    // portion of it still unpaid by payments made by AsOfDate (mirroring
-    // DebtSummary's own Debt_Register -> Vouchers -> PaymentAllocations
-    // join, just with the same date guard GetBookBalancesAsync uses).
+    // portion of it still unpaid by payments made by AsOfDate. The paid
+    // portion comes from fn_DebtAllocations (SQL/031), the same function
+    // DebtSummary uses, so it covers vouchers that pay several debts and
+    // cannot disagree with the Debt Status report - here with the date guard
+    // GetBookBalancesAsync uses.
     public async Task<BalanceSheetData> GetBalanceSheetAsync(int year, int month)
     {
         var (cash, bank) = await _certificationService.GetBookBalancesAsync(year, month);
@@ -355,13 +357,7 @@ public class ReportService : IReportService
         const string sql = @"
             SELECT ISNULL(SUM(d.Total_Owed - ISNULL(paid.Allocated, 0)), 0)
             FROM Debt_Register d
-            OUTER APPLY (
-                SELECT SUM(pa.Allocated_Amount) AS Allocated
-                FROM Vouchers v
-                INNER JOIN PaymentAllocations pa ON pa.Voucher_ID = v.Voucher_ID
-                INNER JOIN Payments p ON p.Payment_ID = pa.Payment_ID
-                WHERE v.Debt_Link = d.Debt_ID AND p.Payment_Date <= @AsOfDate
-            ) paid
+            LEFT JOIN dbo.fn_DebtAllocations(@AsOfDate) paid ON paid.Debt_ID = d.Debt_ID
             WHERE d.Date_Incurred <= @AsOfDate;";
 
         var accountsPayable = await conn.ExecuteScalarAsync<decimal>(sql, new { AsOfDate = asOfDate });

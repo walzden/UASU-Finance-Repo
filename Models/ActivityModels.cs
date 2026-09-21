@@ -115,6 +115,11 @@ public class ActivityLineView
     public bool NotSignedIn { get; set; }
     public string? Decision { get; set; }
     public string? Reason { get; set; }
+    // A Pay decision creates a debt owed to the official; the treasury later
+    // raises a voucher from it. Voucher_ID is that voucher (or, for lines
+    // decided before debts existed, the voucher created directly).
+    public string? Debt_ID { get; set; }
+    public decimal? DebtAmount { get; set; }
     public string? Voucher_ID { get; set; }
     public string? VoucherStatus { get; set; }
 }
@@ -172,26 +177,12 @@ public class LineDecisionInput
     public string Activity_ID { get; set; } = string.Empty;
     public string OfficialID { get; set; } = string.Empty;
     public string? Decision { get; set; }      // "Pay" | "NotPayable" | blank (leave undecided)
-    public string? Budget_Link { get; set; }
-    public decimal? Amount { get; set; }
+    public decimal? Amount { get; set; }        // the amount owed, for Pay
     public string? Reason { get; set; }
-}
-
-public class VoucherPlan
-{
-    public string OfficialID { get; set; } = string.Empty;
-    public string OfficialName { get; set; } = string.Empty;
-    public string? OfficialRole { get; set; }
-    public string Budget_Link { get; set; } = string.Empty;
-    public string BudgetLabel { get; set; } = string.Empty;
-    public decimal Amount { get; set; }
-    public string Description { get; set; } = string.Empty;
-    public bool DescriptionShortened { get; set; }
-    public List<OpenActivityLine> Lines { get; set; } = new();
 }
 
 public class DecisionResult
 {
-    public List<string> VoucherIds { get; set; } = new();
+    public List<string> DebtIds { get; set; } = new();
     public int NotPayableCount { get; set; }
 }
