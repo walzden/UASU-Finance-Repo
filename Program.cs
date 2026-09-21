@@ -25,6 +25,7 @@ builder.Services.AddScoped<IBudgetPlanningService, BudgetPlanningService>();
 builder.Services.AddScoped<IMemberRegisterService, MemberRegisterService>();
 builder.Services.AddScoped<IHonorariaService, HonorariaService>();
 builder.Services.AddScoped<IActivityService, ActivityService>();
+builder.Services.AddScoped<IDebtPaymentService, DebtPaymentService>();
 builder.Services.AddScoped<IEmailService, SmtpEmailService>();
 
 builder.Services

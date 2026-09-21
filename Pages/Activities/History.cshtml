@@ -2,19 +2,20 @@
 @model UASU_VoucherApprovals.Pages.Activities.HistoryModel
 
 <h3 class="mb-1">Activity history</h3>
-<p class="text-muted">Everything you have logged or taken part in, and what the treasury decided for each line: waiting, paid on a voucher, or not payable with the reason.</p>
+<p class="text-muted">Everything you have logged or taken part in, and what the treasury decided for each line: waiting, owed (a debt awaiting its voucher), paid on a voucher, or not payable with the reason.</p>
 
 <div class="row g-3 mb-4">
-    <div class="col-6 col-lg-3"><div class="card text-center h-100"><div class="card-body"><div class="fs-4 fw-bold">@Model.Counts["all"]</div><div class="text-muted small">Activities logged or taken part in</div></div></div></div>
-    <div class="col-6 col-lg-3"><div class="card text-center h-100"><div class="card-body"><div class="fs-4 fw-bold">@Model.MyWaiting</div><div class="text-muted small">My lines waiting for the treasury</div></div></div></div>
-    <div class="col-6 col-lg-3"><div class="card text-center h-100"><div class="card-body"><div class="fs-4 fw-bold">@Model.MyPaid</div><div class="text-muted small">My lines paid via a voucher</div></div></div></div>
-    <div class="col-6 col-lg-3"><div class="card text-center h-100"><div class="card-body"><div class="fs-4 fw-bold">@Model.MyNotPayable</div><div class="text-muted small">My lines not payable</div></div></div></div>
+    <div class="col-6 col-lg"><div class="card text-center h-100"><div class="card-body"><div class="fs-4 fw-bold">@Model.Counts["all"]</div><div class="text-muted small">Activities logged or taken part in</div></div></div></div>
+    <div class="col-6 col-lg"><div class="card text-center h-100"><div class="card-body"><div class="fs-4 fw-bold">@Model.MyWaiting</div><div class="text-muted small">My lines waiting for the treasury</div></div></div></div>
+    <div class="col-6 col-lg"><div class="card text-center h-100"><div class="card-body"><div class="fs-4 fw-bold">@Model.MyOwed</div><div class="text-muted small">Owed to me, awaiting a voucher@(Model.MyOwed > 0 ? $" (Sh. {Model.MyOwedAmount:N2})" : "")</div></div></div></div>
+    <div class="col-6 col-lg"><div class="card text-center h-100"><div class="card-body"><div class="fs-4 fw-bold">@Model.MyPaid</div><div class="text-muted small">My lines paid via a voucher</div></div></div></div>
+    <div class="col-6 col-lg"><div class="card text-center h-100"><div class="card-body"><div class="fs-4 fw-bold">@Model.MyNotPayable</div><div class="text-muted small">My lines not payable</div></div></div></div>
 </div>
 
 @{
     var tabs = new (string Key, string Label)[]
     {
-        ("all", "All"), ("waiting", "Waiting for the treasury"), ("paid", "Paid"), ("no", "Not payable")
+        ("all", "All"), ("waiting", "Waiting for the treasury"), ("owed", "Owed, awaiting voucher"), ("paid", "On a voucher"), ("no", "Not payable")
     };
 }
 <ul class="nav nav-tabs mb-3">
@@ -72,7 +73,14 @@
                                 <strong>@l.FullName</strong>@if (l.NotSignedIn && l.OfficialID != a.Logged_By) { <span class="text-muted"> (recorded for them by @a.LoggedByName)</span> }:
                                 @if (l.Voucher_ID is not null)
                                 {
-                                    <span>Paid via voucher @l.Voucher_ID &middot; @l.VoucherStatus</span>
+                                    <span>
+                                        @if (l.Debt_ID is not null) { <text>Debt @l.Debt_ID &rarr; </text> }
+                                        On voucher @l.Voucher_ID &middot; @l.VoucherStatus
+                                    </span>
+                                }
+                                else if (l.Decision == "Pay")
+                                {
+                                    <span>Approved for payment: <strong>Sh. @((l.DebtAmount ?? 0).ToString("N2"))</strong> owed (debt @l.Debt_ID), voucher not raised yet</span>
                                 }
                                 else if (l.Decision == "NotPayable")
                                 {

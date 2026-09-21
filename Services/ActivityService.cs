@@ -19,13 +19,14 @@ public interface IActivityService
     Task<IReadOnlyList<MonthCategoryCount>> GetMonthCountsAsync(DateTime monthStart);
     Task<IReadOnlyList<string>> GetOpenMonthsAsync();
 
-    // Pure checks/planning, shared by the preview and the real thing so
-    // what the treasurer sees is exactly what gets created.
+    // Pure checks, shared by the preview and the real thing so what the
+    // treasurer sees is exactly what gets created.
     (List<(OpenActivityLine Line, LineDecisionInput Decision)> Pay, List<(OpenActivityLine Line, LineDecisionInput Decision)> NotPayable, List<string> Errors)
-        ValidateDecisions(IEnumerable<LineDecisionInput> decisions, IReadOnlyList<OpenActivityLine> openLines, IReadOnlyDictionary<string, string> budgetLabels, string decidedBy);
-    List<VoucherPlan> PlanVouchers(IEnumerable<(OpenActivityLine Line, LineDecisionInput Decision)> pay, IReadOnlyDictionary<string, string> budgetLabels);
+        ValidateDecisions(IEnumerable<LineDecisionInput> decisions, IReadOnlyList<OpenActivityLine> openLines, string decidedBy);
 
-    Task<DecisionResult> DecideAsync(IReadOnlyList<LineDecisionInput> decisions, string decidedBy, DateTime voucherDate, IReadOnlyDictionary<string, string> budgetLabels);
+    // Pay creates a debt owed to the official (no voucher yet - vouchers are
+    // raised from debts on the Pay Debts page); Not payable records the reason.
+    Task<DecisionResult> DecideAsync(IReadOnlyList<LineDecisionInput> decisions, string decidedBy);
 }
 
 public class ActivityService : IActivityService
@@ -169,18 +170,29 @@ public class ActivityService : IActivityService
         const string linesSql = @"
             SELECT p.Activity_ID, p.OfficialID, o.FullName,
                    CASE WHEN u.LastLogin IS NULL THEN 1 ELSE 0 END AS NotSignedIn,
-                   p.Decision, p.Reason, p.Voucher_ID,
+                   p.Decision, p.Reason, p.Debt_ID, d.Total_Owed AS DebtAmount,
+                   -- The voucher paying this line: the one raised directly (lines decided
+                   -- before debts existed), else the latest live voucher on its debt.
+                   COALESCE(p.Voucher_ID, dv.Voucher_ID) AS Voucher_ID,
                    CASE
-                       WHEN p.Voucher_ID IS NULL THEN NULL
-                       WHEN EXISTS (SELECT 1 FROM Voucher_Approvals va WHERE va.Voucher_ID = p.Voucher_ID AND va.Approval_Status = 'Rejected') THEN 'Rejected'
-                       WHEN EXISTS (SELECT 1 FROM PaymentAllocations pa WHERE pa.Voucher_ID = p.Voucher_ID) THEN 'Paid'
+                       WHEN COALESCE(p.Voucher_ID, dv.Voucher_ID) IS NULL THEN NULL
+                       WHEN EXISTS (SELECT 1 FROM Voucher_Approvals va WHERE va.Voucher_ID = COALESCE(p.Voucher_ID, dv.Voucher_ID) AND va.Approval_Status = 'Rejected') THEN 'Rejected'
+                       WHEN EXISTS (SELECT 1 FROM PaymentAllocations pa WHERE pa.Voucher_ID = COALESCE(p.Voucher_ID, dv.Voucher_ID)) THEN 'Paid'
                        WHEN vas.FullyApproved = 1 THEN 'Approved'
                        ELSE 'Awaiting approval'
                    END AS VoucherStatus
             FROM ActivityParticipants p
             INNER JOIN Ref_Officials o ON o.OfficialID = p.OfficialID
             LEFT JOIN Users u ON u.OfficialID = p.OfficialID
-            LEFT JOIN VoucherApprovalStatus vas ON vas.Voucher_ID = p.Voucher_ID
+            LEFT JOIN Debt_Register d ON d.Debt_ID = p.Debt_ID
+            OUTER APPLY (
+                SELECT TOP 1 vd.Voucher_ID
+                FROM VoucherDebts vd
+                WHERE vd.Debt_ID = p.Debt_ID
+                  AND NOT EXISTS (SELECT 1 FROM Voucher_Approvals va WHERE va.Voucher_ID = vd.Voucher_ID AND va.Approval_Status = 'Rejected')
+                ORDER BY vd.Voucher_ID DESC
+            ) dv
+            LEFT JOIN VoucherApprovalStatus vas ON vas.Voucher_ID = COALESCE(p.Voucher_ID, dv.Voucher_ID)
             WHERE p.Activity_ID IN @Ids
             ORDER BY o.FullName;";
         var lines = (await conn.QueryAsync<ActivityLineView>(linesSql, new { Ids = ids })).ToLookup(l => l.Activity_ID);
@@ -270,7 +282,7 @@ public class ActivityService : IActivityService
     }
 
     public (List<(OpenActivityLine Line, LineDecisionInput Decision)> Pay, List<(OpenActivityLine Line, LineDecisionInput Decision)> NotPayable, List<string> Errors)
-        ValidateDecisions(IEnumerable<LineDecisionInput> decisions, IReadOnlyList<OpenActivityLine> openLines, IReadOnlyDictionary<string, string> budgetLabels, string decidedBy)
+        ValidateDecisions(IEnumerable<LineDecisionInput> decisions, IReadOnlyList<OpenActivityLine> openLines, string decidedBy)
     {
         var open = openLines.ToDictionary(l => (l.Activity_ID, l.OfficialID));
         var pay = new List<(OpenActivityLine, LineDecisionInput)>();
@@ -295,10 +307,8 @@ public class ActivityService : IActivityService
 
             if (d.Decision == "Pay")
             {
-                if (string.IsNullOrWhiteSpace(d.Budget_Link) || !budgetLabels.ContainsKey(d.Budget_Link))
-                    errors.Add($"{label}: choose a budget item.");
-                else if (d.Amount is null or <= 0)
-                    errors.Add($"{label}: enter an amount greater than zero.");
+                if (d.Amount is null or <= 0)
+                    errors.Add($"{label}: enter the amount owed, greater than zero.");
                 else
                     pay.Add((line, d));
             }
@@ -320,39 +330,16 @@ public class ActivityService : IActivityService
         return (pay, no, errors);
     }
 
-    // One voucher per official per budget item - a real voucher carries a
-    // single budget item, so an official's lines that belong to different
-    // items are split into separate vouchers.
-    public List<VoucherPlan> PlanVouchers(IEnumerable<(OpenActivityLine Line, LineDecisionInput Decision)> pay, IReadOnlyDictionary<string, string> budgetLabels)
-    {
-        return pay
-            .GroupBy(p => (p.Line.OfficialID, Budget: p.Decision.Budget_Link!))
-            .Select(g =>
-            {
-                var lines = g.Select(x => x.Line).ToList();
-                var (text, shortened) = ActivityDescription.Build(lines);
-                return new VoucherPlan
-                {
-                    OfficialID = g.Key.OfficialID,
-                    OfficialName = lines[0].FullName,
-                    OfficialRole = lines[0].Role,
-                    Budget_Link = g.Key.Budget,
-                    BudgetLabel = budgetLabels[g.Key.Budget],
-                    Amount = g.Sum(x => x.Decision.Amount!.Value),
-                    Description = text,
-                    DescriptionShortened = shortened,
-                    Lines = lines
-                };
-            })
-            .OrderBy(v => v.OfficialName).ThenBy(v => v.BudgetLabel)
-            .ToList();
-    }
-
-    // All-or-nothing: the vouchers, the pay decisions and the not-payable
+    // All-or-nothing: the debts, the pay decisions and the not-payable
     // decisions are one transaction. Each UPDATE only matches a line that is
     // still undecided, so two treasury officers acting at once cannot both
-    // decide (or double-pay) the same line.
-    public async Task<DecisionResult> DecideAsync(IReadOnlyList<LineDecisionInput> decisions, string decidedBy, DateTime voucherDate, IReadOnlyDictionary<string, string> budgetLabels)
+    // decide (and double-create a debt for) the same line.
+    //
+    // A Pay decision creates one debt per line: owed to that official, dated
+    // the activity date and described by the activity title, so it is
+    // traceable to its activity. No voucher (and no budget item) yet - the
+    // treasury raises vouchers from debts on the Pay Debts page.
+    public async Task<DecisionResult> DecideAsync(IReadOnlyList<LineDecisionInput> decisions, string decidedBy)
     {
         using var conn = (SqlConnection)_db.CreateConnection();
         conn.Open();
@@ -367,7 +354,7 @@ public class ActivityService : IActivityService
                 INNER JOIN Ref_Officials o ON o.OfficialID = p.OfficialID
                 WHERE p.Decision IS NULL;", transaction: transaction)).ToList();
 
-            var (pay, notPayable, errors) = ValidateDecisions(decisions, open, budgetLabels, decidedBy);
+            var (pay, notPayable, errors) = ValidateDecisions(decisions, open, decidedBy);
             if (errors.Count > 0)
                 throw new InvalidOperationException(string.Join(" ", errors));
             if (pay.Count == 0 && notPayable.Count == 0)
@@ -375,50 +362,42 @@ public class ActivityService : IActivityService
 
             var result = new DecisionResult();
 
-            const string insertVoucher = @"
-                INSERT INTO Vouchers
-                    (VoucherDate, Transaction_Type, Budget_Link, Official_Link, Amount,
-                     [Description], Payee_Category, Is_Travel_Expense)
-                OUTPUT INSERTED.Voucher_ID
+            // Debt_ID is server-generated (DEFAULT expression using DebtSeq).
+            const string insertDebt = @"
+                INSERT INTO Debt_Register
+                    (Creditor_Type, Official_link, Supplier_link, Date_Incurred, Invoice_No, [Description], Total_Owed)
+                OUTPUT INSERTED.Debt_ID
                 VALUES
-                    (@VoucherDate, 'Expense', @BudgetLink, @OfficialId, @Amount,
-                     @Description, 'Official', 0);";
+                    ('Official', @OfficialId, NULL, @DateIncurred, NULL, @Description, @Amount);";
 
             const string markPay = @"
                 UPDATE ActivityParticipants
-                SET Decision = 'Pay', Budget_Link = @BudgetLink, Amount = @Amount, Voucher_ID = @VoucherId,
+                SET Decision = 'Pay', Amount = @Amount, Debt_ID = @DebtId,
                     Decided_By = @DecidedBy, Decided_At = GETDATE()
                 WHERE Activity_ID = @ActivityId AND OfficialID = @OfficialId AND Decision IS NULL;";
 
-            var payByLine = pay.ToDictionary(p => (p.Line.Activity_ID, p.Line.OfficialID), p => p.Decision);
-
-            foreach (var plan in PlanVouchers(pay, budgetLabels))
+            foreach (var (line, d) in pay)
             {
-                var voucherId = await conn.ExecuteScalarAsync<string>(insertVoucher, new
+                var title = line.Title.Trim();
+                var debtId = await conn.ExecuteScalarAsync<string>(insertDebt, new
                 {
-                    VoucherDate = voucherDate.Date,
-                    BudgetLink = plan.Budget_Link,
-                    OfficialId = plan.OfficialID,
-                    plan.Amount,
-                    plan.Description
+                    OfficialId = line.OfficialID,
+                    DateIncurred = line.Activity_Date.Date,
+                    Description = title.Length > 255 ? title[..255] : title,
+                    Amount = d.Amount!.Value
                 }, transaction);
-                result.VoucherIds.Add(voucherId!);
+                result.DebtIds.Add(debtId!);
 
-                foreach (var line in plan.Lines)
+                var rows = await conn.ExecuteAsync(markPay, new
                 {
-                    var d = payByLine[(line.Activity_ID, line.OfficialID)];
-                    var rows = await conn.ExecuteAsync(markPay, new
-                    {
-                        BudgetLink = plan.Budget_Link,
-                        Amount = d.Amount,
-                        VoucherId = voucherId,
-                        DecidedBy = decidedBy,
-                        ActivityId = line.Activity_ID,
-                        OfficialId = line.OfficialID
-                    }, transaction);
-                    if (rows != 1)
-                        throw new InvalidOperationException($"{line.FullName} – {line.Title} was decided by someone else in the meantime. Nothing was saved; reload and try again.");
-                }
+                    Amount = d.Amount!.Value,
+                    DebtId = debtId,
+                    DecidedBy = decidedBy,
+                    ActivityId = line.Activity_ID,
+                    OfficialId = line.OfficialID
+                }, transaction);
+                if (rows != 1)
+                    throw new InvalidOperationException($"{line.FullName} – {line.Title} was decided by someone else in the meantime. Nothing was saved; reload and try again.");
             }
 
             const string markNo = @"
