@@ -5,6 +5,11 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UserSecretsId>7671f71a-d555-4435-854c-0d5a9544ccf0</UserSecretsId>
+    <!-- The live service runs from publish/ inside this folder. Without
+         this, each `dotnet publish -o publish` picks up the previous
+         output's .json/.config files as content and copies them into
+         publish/publish/..., nesting one level deeper every deploy. -->
+    <DefaultItemExcludes>$(DefaultItemExcludes);publish/**</DefaultItemExcludes>
   </PropertyGroup>
 
   <ItemGroup>
