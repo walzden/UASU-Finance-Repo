@@ -175,7 +175,15 @@ public class VoucherService : IVoucherService
     public async Task<IEnumerable<OfficialOption>> GetOfficialsAsync()
     {
         using var conn = _db.CreateConnection();
-        const string sql = "SELECT OfficialID AS Id, FullName + ' (' + Role + ')' AS Label, FullName FROM Ref_Officials WHERE IsCurrent = 1 ORDER BY FullName;";
+        // Former officials (IsCurrent = 0) are still valid payees - e.g.
+        // arrears or refunds owed after leaving office - so list them too,
+        // after the current officers and clearly tagged.
+        const string sql = @"
+            SELECT OfficialID AS Id,
+                   FullName + ' (' + Role + CASE WHEN IsCurrent = 1 THEN '' ELSE ' - former' END + ')' AS Label,
+                   FullName
+            FROM Ref_Officials
+            ORDER BY IsCurrent DESC, FullName;";
         return await conn.QueryAsync<OfficialOption>(sql);
     }
 
