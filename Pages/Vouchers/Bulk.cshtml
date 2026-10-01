@@ -1,0 +1,163 @@
+@page
+@model UASU_VoucherApprovals.Pages.Vouchers.BulkModel
+
+<h3 class="mb-1">Bulk Vouchers for Officials</h3>
+<p class="text-muted">Creates one Expense voucher per ticked current official, all on the same budget line and description. Untick anyone who isn't part of this payment. The vouchers still need Chairman and Chapter Secretary approval.</p>
+
+@if (!string.IsNullOrEmpty(Model.StatusMessage))
+{
+    <div class="alert @(Model.StatusIsError ? "alert-danger" : "alert-success")">@Model.StatusMessage</div>
+}
+
+<form method="post" id="bulkForm" style="max-width: 900px;">
+    <div asp-validation-summary="ModelOnly" class="text-danger"></div>
+
+    <div class="row g-3 mb-3">
+        <div class="col-md-4">
+            <label asp-for="Input.VoucherDate" class="form-label">Voucher date</label>
+            <input asp-for="Input.VoucherDate" type="date" class="form-control" />
+        </div>
+        <div class="col-md-8">
+            <label asp-for="Input.Budget_Link" class="form-label">Budget code</label>
+            <select asp-for="Input.Budget_Link" class="form-select">
+                <option value="">-- select --</option>
+                @foreach (var b in Model.BudgetCodes)
+                {
+                    <option value="@b.Id">@b.Label</option>
+                }
+            </select>
+            <span asp-validation-for="Input.Budget_Link" class="text-danger"></span>
+        </div>
+        <div class="col-md-8">
+            <label asp-for="Input.Description" class="form-label">Description</label>
+            <input asp-for="Input.Description" class="form-control" maxlength="1000"
+                   placeholder="e.g. October 2026 AGM sitting allowance" />
+            <span asp-validation-for="Input.Description" class="text-danger"></span>
+            <div class="form-text">Used on every voucher. Anyone who already has a voucher with this exact description can't be paid again.</div>
+        </div>
+        <div class="col-md-4 d-flex align-items-start pt-md-4">
+            <button type="submit" asp-page-handler="Refresh" formnovalidate class="btn btn-outline-secondary mt-md-2">Check description</button>
+        </div>
+        <div class="col-md-4">
+            <label asp-for="Input.DefaultAmount" class="form-label">Amount per official (KES)</label>
+            <input asp-for="Input.DefaultAmount" type="number" step="0.01" min="0.01" class="form-control" id="defaultAmount" />
+            <span asp-validation-for="Input.DefaultAmount" class="text-danger"></span>
+        </div>
+        <div class="col-md-8 d-flex align-items-end">
+            <button type="button" class="btn btn-outline-primary" id="applyAmount">Apply to all ticked</button>
+            <span class="form-text ms-2">You can still change any individual amount below.</span>
+        </div>
+    </div>
+
+    <div class="mb-2">
+        <button type="button" class="btn btn-sm btn-link px-0" id="tickAll">Tick all</button> |
+        <button type="button" class="btn btn-sm btn-link px-0" id="tickNone">Untick all</button>
+    </div>
+
+    <table class="table table-sm align-middle">
+        <thead>
+            <tr>
+                <th style="width: 2.5rem;"></th>
+                <th>Official</th>
+                <th>Position</th>
+                <th class="text-end" style="width: 12rem;">Amount (KES)</th>
+            </tr>
+        </thead>
+        <tbody>
+            @for (var i = 0; i < Model.Input.Lines.Count; i++)
+            {
+                var line = Model.Input.Lines[i];
+                var c = Model.Candidates.First(x => x.OfficialID == line.OfficialID);
+                <tr class="@(c.HasVoucher ? "text-muted" : "")">
+                    <td>
+                        <input type="hidden" name="Input.Lines[@i].OfficialID" value="@line.OfficialID" />
+                        <input type="checkbox" class="form-check-input pick" id="pick-@i"
+                               name="Input.Lines[@i].Selected" value="true"
+                               checked="@line.Selected" disabled="@c.HasVoucher" />
+                    </td>
+                    <td><label for="pick-@i" class="mb-0">@c.FullName</label></td>
+                    <td>
+                        @c.Role
+                        @if (c.HasVoucher)
+                        {
+                            <span class="badge bg-secondary ms-1">Already has this voucher</span>
+                        }
+                    </td>
+                    <td class="text-end">
+                        @if (!c.HasVoucher)
+                        {
+                            <input type="number" step="0.01" min="0.01" class="form-control form-control-sm text-end amount"
+                                   name="Input.Lines[@i].Amount" value="@line.Amount?.ToString("0.##")" />
+                            <span asp-validation-for="Input.Lines[i].Amount" class="text-danger small"></span>
+                        }
+                    </td>
+                </tr>
+            }
+        </tbody>
+        <tfoot>
+            <tr>
+                <th colspan="3">Ticked: <span id="tickedCount">0</span></th>
+                <th class="text-end">KES <span id="tickedTotal">0.00</span></th>
+            </tr>
+        </tfoot>
+    </table>
+
+    <button type="submit" class="btn btn-primary" id="createBtn">Create vouchers</button>
+    <a asp-page="/Vouchers/Pending" class="btn btn-link">Pending Vouchers</a>
+</form>
+
+    <script>
+        (function () {
+            const form = document.getElementById('bulkForm');
+            const rows = () => Array.from(form.querySelectorAll('tbody tr'))
+                .map(tr => ({ pick: tr.querySelector('.pick'), amount: tr.querySelector('.amount') }))
+                .filter(r => r.pick && !r.pick.disabled);
+            const fmt = n => n.toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+            function summary() {
+                const ticked = rows().filter(r => r.pick.checked);
+                const total = ticked.reduce((s, r) => s + (parseFloat(r.amount.value) || 0), 0);
+                document.getElementById('tickedCount').textContent = ticked.length;
+                document.getElementById('tickedTotal').textContent = fmt(total);
+                document.getElementById('createBtn').textContent =
+                    'Create ' + ticked.length + ' voucher' + (ticked.length === 1 ? '' : 's');
+                return { count: ticked.length, total };
+            }
+
+            // Unticked rows have their amount greyed out so it's clear
+            // they won't be paid.
+            function syncRow(r) { r.amount.disabled = !r.pick.checked; }
+
+            form.addEventListener('input', summary);
+            form.addEventListener('change', e => {
+                if (e.target.classList.contains('pick')) {
+                    const r = rows().find(x => x.pick === e.target);
+                    if (r) syncRow(r);
+                }
+                summary();
+            });
+
+            document.getElementById('applyAmount').addEventListener('click', () => {
+                const v = document.getElementById('defaultAmount').value;
+                if (!v) { document.getElementById('defaultAmount').focus(); return; }
+                rows().filter(r => r.pick.checked).forEach(r => r.amount.value = v);
+                summary();
+            });
+            document.getElementById('tickAll').addEventListener('click', () => {
+                rows().forEach(r => { r.pick.checked = true; syncRow(r); }); summary();
+            });
+            document.getElementById('tickNone').addEventListener('click', () => {
+                rows().forEach(r => { r.pick.checked = false; syncRow(r); }); summary();
+            });
+
+            form.addEventListener('submit', e => {
+                if (e.submitter && e.submitter.id !== 'createBtn') return;
+                const s = summary();
+                if (!confirm('Create ' + s.count + ' voucher(s) totalling KES ' + fmt(s.total) + '?'))
+                    e.preventDefault();
+            });
+
+            rows().forEach(syncRow);
+            summary();
+        })();
+    </script>
