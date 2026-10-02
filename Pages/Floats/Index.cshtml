@@ -1,0 +1,167 @@
+@page
+@model UASU_VoucherApprovals.Pages.Floats.IndexModel
+
+<h3 class="mb-1">Cash Floats</h3>
+<p class="text-muted mb-3">
+    Cash handed to an official for a purpose &mdash; a repairs project, the treasury's petty cash, a strike fund &mdash;
+    and accounted for with receipts. Issuing a float doesn't change the cash book: it is still the union's cash, just with
+    the custodian. Receipts reach the books once they are retired on a voucher, approved by the Chairman and Chapter
+    Secretary, and settled.
+</p>
+
+@if (!string.IsNullOrEmpty(Model.StatusMessage))
+{
+    <div class="alert alert-success">@Model.StatusMessage</div>
+}
+@if (!string.IsNullOrEmpty(Model.ErrorMessage))
+{
+    <div class="alert alert-danger">@Model.ErrorMessage</div>
+}
+
+<details class="mb-4" open="@(!Model.Floats.Any() || !ViewData.ModelState.IsValid || Model.ErrorMessage is not null)">
+    <summary class="fw-semibold mb-2">Issue a new float</summary>
+    <form method="post" class="row g-3" style="max-width: 820px;">
+        <div class="col-md-4">
+            <label class="form-label">Type</label>
+            <select asp-for="Input.Float_Type" class="form-select">
+                <option>Project</option>
+                <option>Petty Cash</option>
+                <option>Strike Fund</option>
+                <option>Other</option>
+            </select>
+        </div>
+        <div class="col-md-8">
+            <label class="form-label">Purpose</label>
+            <input asp-for="Input.Purpose" class="form-control" placeholder="e.g. Repairs to the union office" />
+            <span asp-validation-for="Input.Purpose" class="text-danger"></span>
+        </div>
+        <div class="col-md-6">
+            <label class="form-label">Custodian (official holding the cash)</label>
+            <select asp-for="Input.Custodian_ID" class="form-select">
+                <option value="">-- choose --</option>
+                @foreach (var o in Model.Custodians)
+                {
+                    <option value="@o.Id">@o.Label</option>
+                }
+            </select>
+            <span asp-validation-for="Input.Custodian_ID" class="text-danger"></span>
+        </div>
+        <div class="col-md-6">
+            <label class="form-label">Funded from withdrawal</label>
+            <select asp-for="Input.Withdrawal_ID" class="form-select">
+                <option value="">-- cash already held by the treasury --</option>
+                @foreach (var w in Model.Withdrawals)
+                {
+                    <option value="@w.Id">@w.Label</option>
+                }
+            </select>
+            <div class="form-text">"Free" is what the withdrawal still has after payments, charges and other floats.</div>
+        </div>
+        <div class="col-md-4">
+            <label class="form-label">Date handed over</label>
+            <input asp-for="Input.Issue_Date" type="date" class="form-control" />
+        </div>
+        <div class="col-md-4">
+            <label class="form-label">Amount (Sh.)</label>
+            <input asp-for="Input.Amount" type="number" step="0.01" class="form-control" />
+            <span asp-validation-for="Input.Amount" class="text-danger"></span>
+        </div>
+        <div class="col-12">
+            <label class="form-label">Notes</label>
+            <textarea asp-for="Input.Notes" class="form-control" rows="2"></textarea>
+        </div>
+        <div class="col-12">
+            <button type="submit" class="btn btn-primary">Issue Float</button>
+        </div>
+    </form>
+</details>
+
+@if (!Model.Floats.Any())
+{
+    <p class="text-muted">No floats issued yet.</p>
+}
+else
+{
+    var open = Model.Floats.Where(f => !f.IsClosed).ToList();
+
+    <div class="row g-3 mb-3">
+        <div class="col-sm-4">
+            <div class="card text-center h-100">
+                <div class="card-body">
+                    <div class="text-muted small">Open floats</div>
+                    <div class="fs-4 fw-bold">@open.Count</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-sm-4">
+            <div class="card text-center h-100 border-warning">
+                <div class="card-body">
+                    <div class="text-muted small">Cash with custodians</div>
+                    <div class="fs-4 fw-bold">@open.Sum(f => f.CashWithCustodian).ToString("N2")</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-sm-4">
+            <div class="card text-center h-100 border-danger">
+                <div class="card-body">
+                    <div class="text-muted small">Receipts not yet settled</div>
+                    <div class="fs-4 fw-bold">@open.Sum(f => f.Spent - f.Settled).ToString("N2")</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <a class="btn btn-outline-secondary btn-sm mb-3" href="?handler=ExportCsv">Export CSV</a>
+    <table class="table table-bordered table-hover align-middle">
+        <thead class="table-light">
+            <tr>
+                <th>Float</th>
+                <th>Type</th>
+                <th>Purpose</th>
+                <th>Custodian</th>
+                <th>Issued On</th>
+                <th class="text-end">Issued (Sh.)</th>
+                <th class="text-end">Receipts (Sh.)</th>
+                <th class="text-end">Settled (Sh.)</th>
+                <th class="text-end">Returned (Sh.)</th>
+                <th class="text-end">Cash With Custodian (Sh.)</th>
+                <th>Status</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var f in Model.Floats)
+            {
+                <tr class="@(f.IsClosed ? "text-muted" : "")">
+                    <td><a asp-page="Details" asp-route-id="@f.Float_ID">@f.Float_ID</a></td>
+                    <td>@f.Float_Type</td>
+                    <td>@f.Purpose</td>
+                    <td>@f.CustodianName</td>
+                    <td>@f.Issue_Date.ToString("yyyy-MM-dd")</td>
+                    <td class="text-end">@f.Issued.ToString("N2")</td>
+                    <td class="text-end">@f.Spent.ToString("N2")</td>
+                    <td class="text-end">@f.Settled.ToString("N2")</td>
+                    <td class="text-end">@f.Returned.ToString("N2")</td>
+                    <td class="text-end fw-semibold">@f.CashWithCustodian.ToString("N2")</td>
+                    <td>
+                        @if (f.IsClosed)
+                        {
+                            <span class="badge bg-secondary">Closed @f.Closed_Date!.Value.ToString("yyyy-MM-dd")</span>
+                        }
+                        else if (f.AwaitingVoucher > 0)
+                        {
+                            <span class="badge bg-warning text-dark">Receipts to retire</span>
+                        }
+                        else if (f.InRetirement > 0)
+                        {
+                            <span class="badge bg-info text-dark">Retirement in progress</span>
+                        }
+                        else
+                        {
+                            <span class="badge bg-success">Open</span>
+                        }
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}

@@ -59,6 +59,64 @@
 </table>
 <div class="form-text mb-3">Computed from Payments up to and including this month - Cash mode only counts as physical cash; M-Pesa/Bank Transfer/Cheque count as bank.</div>
 
+@if (Model.Floats.Any())
+{
+    <h5 class="mt-3">Cash Out in Floats at Month-End</h5>
+    <p class="form-text mb-2">
+        Part of the book Cash above is with officials holding cash floats, not with the treasury. Receipts they have
+        spent but that are not yet retired, approved and settled are still counted as cash in the books &mdash; so the
+        physical count comes out lower than book Cash by that amount until they are settled.
+    </p>
+    <table class="table table-sm table-bordered align-middle" style="max-width: 820px;">
+        <thead class="table-light">
+            <tr>
+                <th>Float</th>
+                <th>Custodian</th>
+                <th>Purpose</th>
+                <th class="text-end">Cash With Custodian</th>
+                <th class="text-end">Receipts Not Yet Settled</th>
+                <th class="text-end">In Book Cash</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var f in Model.Floats)
+            {
+                <tr>
+                    <td><a asp-page="/Floats/Details" asp-route-id="@f.Float_ID">@f.Float_ID</a></td>
+                    <td>@f.CustodianName</td>
+                    <td>@f.Purpose</td>
+                    <td class="text-end">@f.CashWithCustodian.ToString("N2")</td>
+                    <td class="text-end">@((f.Spent - f.Settled).ToString("N2"))</td>
+                    <td class="text-end">@f.BookOutstanding.ToString("N2")</td>
+                </tr>
+            }
+        </tbody>
+        <tfoot class="table-light fw-bold">
+            <tr>
+                <td colspan="3" class="text-end">Total</td>
+                <td class="text-end">@Model.FloatCashWithCustodians.ToString("N2")</td>
+                <td class="text-end">@Model.FloatReceiptsNotSettled.ToString("N2")</td>
+                <td class="text-end">@Model.CashInFloats.ToString("N2")</td>
+            </tr>
+        </tfoot>
+    </table>
+
+    <table class="table table-sm" style="max-width: 480px;">
+        <tr><th>Book Cash</th><td class="text-end">Sh. @Model.BookCashBalance.ToString("N2")</td></tr>
+        <tr><td class="ps-3">less: out in floats</td><td class="text-end">(@Model.CashInFloats.ToString("N2"))</td></tr>
+        <tr class="fw-semibold"><td class="ps-3">Cash the treasury should hold</td><td class="text-end">Sh. @((Model.BookCashBalance - Model.CashInFloats).ToString("N2"))</td></tr>
+        <tr><td class="ps-3">plus: cash with custodians</td><td class="text-end">@Model.FloatCashWithCustodians.ToString("N2")</td></tr>
+        <tr class="fw-bold border-top"><td>Expected physical cash count</td><td class="text-end">Sh. @((Model.BookCashBalance - Model.FloatReceiptsNotSettled).ToString("N2"))</td></tr>
+    </table>
+    @if (Model.FloatReceiptsNotSettled != 0)
+    {
+        <div class="alert alert-warning py-2" style="max-width: 820px;">
+            Sh. @Model.FloatReceiptsNotSettled.ToString("N2") of float receipts dated on or before month-end are not yet settled.
+            If you certify now, mention them in the notes to explain the cash variance, or settle them first.
+        </div>
+    }
+}
+
 <form method="post" asp-page="/Certification/Index" class="row g-3" style="max-width: 480px;">
     <input type="hidden" asp-for="Input.Period_Year" />
     <input type="hidden" asp-for="Input.Period_Month" />

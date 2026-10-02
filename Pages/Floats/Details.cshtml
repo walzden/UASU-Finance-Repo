@@ -1,0 +1,379 @@
+@page
+@model UASU_VoucherApprovals.Pages.Floats.DetailsModel
+@{
+    var f = Model.Float!;
+    var retirable = Model.Receipts.Where(r => r.CanRetire).ToList();
+    var settleable = Model.Vouchers.Where(v => v.RetirementState == "Approved - not settled").ToList();
+}
+
+<style>
+    /* Print / Save as PDF: the float statement - summary, receipts,
+       retirement vouchers and returns under a letterhead, without the
+       forms and buttons. Badges keep their colours (browsers drop
+       backgrounds when printing unless told otherwise). */
+    @@media print {
+        table { font-size: 12px; }
+        tr { break-inside: avoid; }
+        thead { display: table-header-group; }
+        .badge { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        .card { border: 1px solid #999 !important; }
+    }
+</style>
+
+<div class="d-none d-print-block mb-3">
+    <div class="d-flex align-items-center gap-3">
+        <img src="~/images/uasu-Logo.jpg" alt="UASU logo" style="height:55px;"
+             onerror="this.onerror=null; this.src='/images/uasu-logo-placeholder.svg';" />
+        <div class="text-center flex-grow-1">
+            <h4 class="fw-bold mb-0">UNIVERSITIES' ACADEMIC STAFF UNION</h4>
+            <h5 class="mb-0">CASH FLOAT STATEMENT &mdash; @f.Float_ID</h5>
+            <div class="small text-muted">As at @DateTime.Today.ToString("d MMMM yyyy")</div>
+        </div>
+    </div>
+</div>
+
+<div class="d-flex align-items-center gap-2 mb-1 d-print-none">
+    <a asp-page="Index" class="btn btn-link btn-sm px-0">&larr; All floats</a>
+</div>
+<div class="d-flex align-items-center gap-2 mb-1">
+    <h3 class="mb-0">@f.Float_ID</h3>
+    <span class="badge bg-secondary">@f.Float_Type</span>
+    @if (f.IsClosed)
+    {
+        <span class="badge bg-dark">Closed @f.Closed_Date!.Value.ToString("yyyy-MM-dd")</span>
+    }
+    else
+    {
+        <span class="badge bg-success">Open</span>
+    }
+</div>
+<p class="mb-3">
+    <strong>@f.Purpose</strong><br />
+    Held by <strong>@f.CustodianName</strong> &middot; issued @f.Issue_Date.ToString("d MMM yyyy")
+    @if (f.Withdrawal_ID is not null) { <text>from withdrawal @f.Withdrawal_ID</text> } else { <text>from cash already held by the treasury</text> }
+    @if (!string.IsNullOrWhiteSpace(f.Notes)) { <br /><span class="text-muted">@f.Notes</span> }
+</p>
+
+@if (!string.IsNullOrEmpty(Model.StatusMessage))
+{
+    <div class="alert alert-success d-print-none">@Model.StatusMessage</div>
+}
+@if (!string.IsNullOrEmpty(Model.ErrorMessage))
+{
+    <div class="alert alert-danger d-print-none">@Model.ErrorMessage</div>
+}
+
+<div class="row g-3 mb-3">
+    <div class="col-6 col-lg">
+        <div class="card text-center h-100"><div class="card-body">
+            <div class="text-muted small">Issued</div>
+            <div class="fs-5 fw-bold">@f.Issued.ToString("N2")</div>
+        </div></div>
+    </div>
+    <div class="col-6 col-lg">
+        <div class="card text-center h-100"><div class="card-body">
+            <div class="text-muted small">Receipts</div>
+            <div class="fs-5 fw-bold">@f.Spent.ToString("N2")</div>
+        </div></div>
+    </div>
+    <div class="col-6 col-lg">
+        <div class="card text-center h-100 border-success"><div class="card-body">
+            <div class="text-muted small">Settled (in the books)</div>
+            <div class="fs-5 fw-bold text-success">@f.Settled.ToString("N2")</div>
+        </div></div>
+    </div>
+    <div class="col-6 col-lg">
+        <div class="card text-center h-100"><div class="card-body">
+            <div class="text-muted small">Returned to treasury</div>
+            <div class="fs-5 fw-bold">@f.Returned.ToString("N2")</div>
+        </div></div>
+    </div>
+    <div class="col-12 col-lg">
+        <div class="card text-center h-100 border-warning"><div class="card-body">
+            <div class="text-muted small">Cash with custodian</div>
+            <div class="fs-5 fw-bold">@f.CashWithCustodian.ToString("N2")</div>
+        </div></div>
+    </div>
+</div>
+
+<div class="mb-4 d-print-none">
+    <button type="button" class="btn btn-primary" onclick="window.print()">Print / Save as PDF</button>
+    @if (f.CanClose)
+    {
+        <form method="post" asp-page-handler="Close" asp-route-id="@f.Float_ID" class="d-inline">
+            <button type="submit" class="btn btn-outline-dark ms-1"
+                    onclick="return confirm('Close @f.Float_ID? No more receipts or returns can be recorded against it.');">Close Float</button>
+        </form>
+    }
+    else if (!f.IsClosed)
+    {
+        <span class="form-text ms-2">The float can be closed once all its cash is spent or returned and every receipt is settled.</span>
+    }
+</div>
+
+@* ---------------------------------------------------------------- Receipts *@
+<h5>Receipts</h5>
+@if (!Model.Receipts.Any())
+{
+    <p class="text-muted">No receipts recorded yet.</p>
+}
+else
+{
+    <form method="post" asp-page-handler="Retire" asp-route-id="@f.Float_ID" id="retireForm"></form>
+    <table class="table table-bordered align-middle">
+        <thead class="table-light">
+            <tr>
+                <th class="d-print-none" style="width:2rem;">
+                    @if (retirable.Any())
+                    {
+                        <input type="checkbox" class="form-check-input" title="Tick all receipts that can be retired"
+                               onclick="document.querySelectorAll('.retire-box').forEach(b => b.checked = this.checked)" />
+                    }
+                </th>
+                <th>Date</th>
+                <th>Paid To</th>
+                <th>Receipt No.</th>
+                <th>Description</th>
+                <th>Budget Line</th>
+                <th class="text-end">Amount (Sh.)</th>
+                <th>Voucher</th>
+                <th>Status</th>
+                <th class="d-print-none"></th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var r in Model.Receipts)
+            {
+                <tr>
+                    <td class="d-print-none">
+                        @if (r.CanRetire)
+                        {
+                            <input type="checkbox" class="form-check-input retire-box" name="receiptIds" value="@r.Receipt_Line_ID" form="retireForm" />
+                        }
+                    </td>
+                    <td>@r.Receipt_Date.ToString("yyyy-MM-dd")</td>
+                    <td>@r.Vendor</td>
+                    <td>@r.Receipt_No</td>
+                    <td>@r.Description</td>
+                    <td>@r.Category_Name</td>
+                    <td class="text-end">@r.Amount.ToString("N2")</td>
+                    <td>@r.Voucher_ID</td>
+                    <td>
+                        <span class="badge @(r.RetirementState switch
+                        {
+                            "Settled" => "bg-success",
+                            "Approved - not settled" => "bg-primary",
+                            "Awaiting approval" => "bg-info text-dark",
+                            "Rejected" => "bg-danger",
+                            _ => "bg-warning text-dark"
+                        })">@(r.RetirementState == "Rejected" ? "Voucher rejected - retire again" : r.RetirementState)</span>
+                    </td>
+                    <td class="d-print-none text-nowrap">
+                        @if (r.HasAttachment)
+                        {
+                            <a asp-page="ReceiptAttachment" asp-route-id="@r.Receipt_Line_ID" target="_blank" class="btn btn-outline-secondary btn-sm">Scan</a>
+                        }
+                        @if (r.CanRetire)
+                        {
+                            <form method="post" asp-page-handler="DeleteReceipt" asp-route-id="@f.Float_ID" class="d-inline">
+                                <input type="hidden" name="receiptLineId" value="@r.Receipt_Line_ID" />
+                                <button type="submit" class="btn btn-outline-danger btn-sm"
+                                        onclick="return confirm('Remove this receipt? Only do this for a receipt entered by mistake.');">Remove</button>
+                            </form>
+                        }
+                    </td>
+                </tr>
+            }
+        </tbody>
+        <tfoot class="table-light fw-bold">
+            <tr>
+                <td class="d-print-none"></td>
+                <td colspan="5" class="text-end">Total receipts</td>
+                <td class="text-end">@Model.Receipts.Sum(r => r.Amount).ToString("N2")</td>
+                <td colspan="2"></td>
+                <td class="d-print-none"></td>
+            </tr>
+        </tfoot>
+    </table>
+    @if (retirable.Any())
+    {
+        <div class="mb-4 d-print-none">
+            <button type="submit" form="retireForm" class="btn btn-primary">Retire Ticked Receipts</button>
+            <span class="form-text ms-2">
+                Raises one voucher per budget line, paid to @f.CustodianName, listing every receipt. It then goes to the
+                Chairman and Chapter Secretary for approval like any other voucher.
+            </span>
+        </div>
+    }
+}
+
+@if (!f.IsClosed)
+{
+    <details class="mb-4 d-print-none" open="@(!Model.Receipts.Any() || !ViewData.ModelState.IsValid)">
+        <summary class="fw-semibold mb-2">Record a receipt</summary>
+        <form method="post" asp-page-handler="AddReceipt" asp-route-id="@f.Float_ID" enctype="multipart/form-data" class="row g-3" style="max-width: 820px;">
+            <div class="col-md-3">
+                <label class="form-label">Receipt date</label>
+                <input asp-for="ReceiptInput.Receipt_Date" type="date" class="form-control" />
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">Amount (Sh.)</label>
+                <input asp-for="ReceiptInput.Amount" type="number" step="0.01" class="form-control" />
+                <span asp-validation-for="ReceiptInput.Amount" class="text-danger"></span>
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Paid to</label>
+                <input asp-for="ReceiptInput.Vendor" class="form-control" placeholder="e.g. Kiri Hardware" />
+                <span asp-validation-for="ReceiptInput.Vendor" class="text-danger"></span>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">Receipt no. (optional)</label>
+                <input asp-for="ReceiptInput.Receipt_No" class="form-control" />
+            </div>
+            <div class="col-md-5">
+                <label class="form-label">What it was for</label>
+                <input asp-for="ReceiptInput.Description" class="form-control" placeholder="e.g. 10 bags of cement" />
+                <span asp-validation-for="ReceiptInput.Description" class="text-danger"></span>
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Budget code</label>
+                <select asp-for="ReceiptInput.Budget_Link" class="form-select">
+                    <option value="">-- choose --</option>
+                    @foreach (var b in Model.BudgetCodes)
+                    {
+                        <option value="@b.Id">@b.Label</option>
+                    }
+                </select>
+                <span asp-validation-for="ReceiptInput.Budget_Link" class="text-danger"></span>
+            </div>
+            <div class="col-md-8">
+                <label class="form-label">Scan or photo of the receipt (optional)</label>
+                <input asp-for="ReceiptInput.Attachment" type="file" accept="image/png, image/jpeg, application/pdf" class="form-control" />
+                <div class="form-text">JPEG, PNG or PDF, up to 5MB.</div>
+            </div>
+            <div class="col-12">
+                <button type="submit" class="btn btn-primary">Record Receipt</button>
+                <span class="form-text ms-2">Sh.@f.CashWithCustodian.ToString("N2") still with @f.CustodianName.</span>
+            </div>
+        </form>
+    </details>
+}
+
+@* ---------------------------------------------------- Retirement vouchers *@
+<h5>Retirement Vouchers</h5>
+@if (!Model.Vouchers.Any())
+{
+    <p class="text-muted">None yet &mdash; retire receipts above to raise one.</p>
+}
+else
+{
+    <form method="post" asp-page-handler="Settle" asp-route-id="@f.Float_ID" id="settleForm"></form>
+    <table class="table table-bordered align-middle">
+        <thead class="table-light">
+            <tr>
+                <th class="d-print-none" style="width:2rem;"></th>
+                <th>Voucher</th>
+                <th>Date</th>
+                <th>Budget Line</th>
+                <th class="text-end">Receipts</th>
+                <th class="text-end">Amount (Sh.)</th>
+                <th>Status</th>
+                <th>Payment</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var v in Model.Vouchers)
+            {
+                <tr>
+                    <td class="d-print-none">
+                        @if (v.RetirementState == "Approved - not settled")
+                        {
+                            <input type="checkbox" class="form-check-input" name="voucherIds" value="@v.Voucher_ID" form="settleForm" checked />
+                        }
+                    </td>
+                    <td>@v.Voucher_ID</td>
+                    <td>@v.VoucherDate.ToString("yyyy-MM-dd")</td>
+                    <td>@v.Category_Name</td>
+                    <td class="text-end">@v.ReceiptCount</td>
+                    <td class="text-end">@v.Amount.ToString("N2")</td>
+                    <td>@v.RetirementState</td>
+                    <td>@v.Payment_ID</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+    @if (settleable.Any())
+    {
+        <div class="mb-4 d-print-none">
+            <button type="submit" form="settleForm" class="btn btn-success">Settle Ticked Vouchers</button>
+            <span class="form-text ms-2">
+                Records one Cash payment@(f.Withdrawal_ID is null ? "" : $", funded from withdrawal {f.Withdrawal_ID}"),
+                dated today. That is when the receipts reach the cash book and budget performance.
+            </span>
+        </div>
+    }
+}
+
+@* --------------------------------------------------------------- Returns *@
+<h5>Cash Returned to Treasury</h5>
+@if (!Model.Returns.Any())
+{
+    <p class="text-muted">Nothing returned yet.</p>
+}
+else
+{
+    <table class="table table-bordered align-middle" style="max-width: 820px;">
+        <thead class="table-light">
+            <tr>
+                <th>Date</th>
+                <th class="text-end">Amount (Sh.)</th>
+                <th>Notes</th>
+                <th>Recorded By</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var r in Model.Returns)
+            {
+                <tr>
+                    <td>@r.Return_Date.ToString("yyyy-MM-dd")</td>
+                    <td class="text-end">@r.Amount.ToString("N2")</td>
+                    <td>@r.Notes</td>
+                    <td>@r.RecordedByName</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@if (!f.IsClosed && f.CashWithCustodian > 0)
+{
+    <details class="mb-4 d-print-none">
+        <summary class="fw-semibold mb-2">Record cash returned by @f.CustodianName</summary>
+        <form method="post" asp-page-handler="Return" asp-route-id="@f.Float_ID" class="row g-3" style="max-width: 640px;">
+            <div class="col-md-4">
+                <label class="form-label">Date returned</label>
+                <input asp-for="ReturnInput.Return_Date" type="date" class="form-control" />
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Amount (Sh.)</label>
+                <input asp-for="ReturnInput.Amount" type="number" step="0.01" max="@f.CashWithCustodian" class="form-control" />
+                <span asp-validation-for="ReturnInput.Amount" class="text-danger"></span>
+            </div>
+            <div class="col-12">
+                <label class="form-label">Notes</label>
+                <input asp-for="ReturnInput.Notes" class="form-control" />
+            </div>
+            <div class="col-12">
+                <button type="submit" class="btn btn-outline-primary">Record Return</button>
+                <span class="form-text ms-2">The cash stays in the cash book; it is just back with the treasury.</span>
+            </div>
+        </form>
+    </details>
+}
+
+<div class="d-none d-print-block mt-5">
+    <div class="row">
+        <div class="col-6">Custodian: ______________________________<br />@f.CustodianName</div>
+        <div class="col-6">Treasurer: ______________________________</div>
+    </div>
+</div>

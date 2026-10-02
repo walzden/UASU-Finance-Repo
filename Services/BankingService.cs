@@ -65,13 +65,25 @@ public class BankingService : IBankingService
         // here means this list can never drift out of sync with the
         // reconciliation report - there's exactly one place that knows
         // how to net a withdrawal against both allocations and charges.
+        //
+        // InFloats is the part of Remaining that's out with a cash float
+        // custodian (SQL/032) - shown alongside, not taken off Remaining,
+        // since the reports built on this list read Remaining as
+        // BankReconciliation's own figure.
         const string sql = @"
             SELECT w.Withdrawal_ID, w.Withdrawal_Date, w.Amount, w.Reference_No, w.Bank_Account, w.Notes,
                    br.TotalAllocated AS Allocated,
                    br.TotalCharges AS Charges,
-                   br.UnallocatedBalance AS Remaining
+                   br.UnallocatedBalance AS Remaining,
+                   ISNULL(fl.InFloats, 0) AS InFloats
             FROM BankWithdrawals w
             INNER JOIN BankReconciliation br ON br.Withdrawal_ID = w.Withdrawal_ID
+            LEFT JOIN (
+                SELECT Withdrawal_ID, SUM(BookOutstanding) AS InFloats
+                FROM fn_CashFloatPosition('9999-12-31')
+                WHERE Withdrawal_ID IS NOT NULL
+                GROUP BY Withdrawal_ID
+            ) fl ON fl.Withdrawal_ID = w.Withdrawal_ID
             ORDER BY w.Withdrawal_Date DESC;";
 
         return await conn.QueryAsync<WithdrawalListRow>(sql);
@@ -85,12 +97,22 @@ public class BankingService : IBankingService
         // still owed to bank/M-PESA charges isn't actually available to
         // fund a new payment, even if WithdrawalPayments alone would
         // suggest otherwise.
+        //
+        // Cash handed out in a cash float (SQL/032) isn't free either:
+        // it's with the custodian until settled or returned, so it comes
+        // off what's offered here too.
         const string sql = @"
             SELECT br.Withdrawal_ID AS Id,
                    br.Withdrawal_ID + ' - ' + FORMAT(br.Withdrawal_Date,'yyyy-MM-dd')
-                   + ' - Sh.' + FORMAT(br.UnallocatedBalance,'N2') + ' remaining' AS Label
+                   + ' - Sh.' + FORMAT(br.UnallocatedBalance - ISNULL(fl.InFloats, 0),'N2') + ' remaining' AS Label
             FROM BankReconciliation br
-            WHERE br.UnallocatedBalance > 0
+            LEFT JOIN (
+                SELECT Withdrawal_ID, SUM(BookOutstanding) AS InFloats
+                FROM fn_CashFloatPosition('9999-12-31')
+                WHERE Withdrawal_ID IS NOT NULL
+                GROUP BY Withdrawal_ID
+            ) fl ON fl.Withdrawal_ID = br.Withdrawal_ID
+            WHERE br.UnallocatedBalance - ISNULL(fl.InFloats, 0) > 0
             ORDER BY br.Withdrawal_Date DESC;";
 
         return await conn.QueryAsync<SimpleOption>(sql);
