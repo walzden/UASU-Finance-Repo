@@ -220,10 +220,9 @@ public class OfficialOption
 
 public class PaymentInputModel
 {
-    // One or more approved, unpaid vouchers to settle together with this
-    // single payment - each is allocated in full (its own Amount), so
-    // Amount_Paid below is expected to equal their sum. Checking exactly
-    // one reproduces the old single-voucher behavior.
+    // One or more approved, unpaid vouchers to settle. Each gets its own
+    // payment record for its own full Amount; Amount_Paid below is just
+    // the total of the batch, shown on the form.
     [Required]
     [MinLength(1, ErrorMessage = "Select at least one voucher.")]
     public List<string> Voucher_IDs { get; set; } = new();
@@ -239,9 +238,9 @@ public class PaymentInputModel
     public string? Bank_Account { get; set; }
     public string? Description { get; set; }
 
-    // When set, this payment was funded from cash drawn via this
-    // withdrawal - RecordPaymentAsync also inserts the WithdrawalPayments
-    // link row so the two stay tied together.
+    // When set, these payments were funded from cash drawn via this
+    // withdrawal - RecordPaymentAsync also inserts a WithdrawalPayments
+    // link row for each payment so they stay tied together.
     public string? Withdrawal_Link { get; set; }
 }
 

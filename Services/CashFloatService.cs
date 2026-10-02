@@ -32,7 +32,7 @@ public interface ICashFloatService
 
     Task<IReadOnlyList<string>> RetireAsync(string floatId, IReadOnlyCollection<int> receiptLineIds);
     Task<IEnumerable<CashFloatVoucherRow>> GetRetirementVouchersAsync(string floatId);
-    Task<string> SettleAsync(string floatId, IReadOnlyCollection<string> voucherIds);
+    Task<IReadOnlyList<string>> SettleAsync(string floatId, IReadOnlyCollection<string> voucherIds);
 
     Task<IEnumerable<CashFloatReturnRow>> GetReturnsAsync(string floatId);
     Task RecordReturnAsync(CashFloatReturnInputModel input, string recordedByOfficialId);
@@ -429,12 +429,12 @@ public class CashFloatService : ICashFloatService
     }
 
     // ------------------------------------------------------------------
-    // Settle: approved retirement vouchers -> one ordinary Cash payment,
-    // linked to the float's withdrawal. RecordPaymentAsync's own triggers
-    // (trg_PaymentAllocations_RequireApproval etc.) still apply.
+    // Settle: approved retirement vouchers -> ordinary Cash payments, one
+    // per voucher, linked to the float's withdrawal. RecordPaymentAsync's
+    // own triggers (trg_PaymentAllocations_RequireApproval etc.) still apply.
     // ------------------------------------------------------------------
 
-    public async Task<string> SettleAsync(string floatId, IReadOnlyCollection<string> voucherIds)
+    public async Task<IReadOnlyList<string>> SettleAsync(string floatId, IReadOnlyCollection<string> voucherIds)
     {
         if (voucherIds.Count == 0)
             throw new InvalidOperationException("Tick at least one approved voucher to settle.");

@@ -81,8 +81,8 @@ public class DetailsModel : PageModel
     {
         return await RunAsync(null, null, async () =>
         {
-            var paymentId = await _floatService.SettleAsync(Id, voucherIds);
-            return $"Settled as cash payment {paymentId}. The receipts are now in the cash book.";
+            var paymentIds = await _floatService.SettleAsync(Id, voucherIds);
+            return $"Settled as cash payment{(paymentIds.Count == 1 ? "" : "s")} {string.Join(", ", paymentIds)}. The receipts are now in the cash book.";
         });
     }
 

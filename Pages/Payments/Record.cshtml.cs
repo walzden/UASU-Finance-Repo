@@ -60,11 +60,11 @@ public class RecordModel : PageModel
             // trg_PaymentAllocations_RequireApproval and trg_PaymentStatusUpdate
             // fire as a final server-side check even though the list was
             // already filtered to eligible vouchers.
-            var voucherCount = Input.Voucher_IDs.Count;
-            var paymentId = await _voucherService.RecordPaymentAsync(Input);
-            StatusMessage = voucherCount == 1
-                ? $"Payment {paymentId} recorded against voucher {Input.Voucher_IDs[0]}."
-                : $"Payment {paymentId} recorded against {voucherCount} vouchers.";
+            var paymentIds = await _voucherService.RecordPaymentAsync(Input);
+            StatusMessage = paymentIds.Count == 1
+                ? $"Payment {paymentIds[0]} recorded against voucher {Input.Voucher_IDs[0]}."
+                : $"{paymentIds.Count} payments recorded, one per voucher: "
+                  + string.Join(", ", paymentIds.Select((p, i) => $"{p} ({Input.Voucher_IDs[i]})")) + ".";
 
             // Redirect (PRG) rather than just re-rendering Page() here -
             // ApprovedVouchers was already loaded at the top of this
