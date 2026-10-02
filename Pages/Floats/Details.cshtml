@@ -307,7 +307,7 @@ else
         <div class="mb-4 d-print-none">
             <button type="submit" form="settleForm" class="btn btn-success">Settle Ticked Vouchers</button>
             <span class="form-text ms-2">
-                Records a Cash payment for each voucher@(f.Withdrawal_ID is null ? "" : $", funded from withdrawal {f.Withdrawal_ID}"),
+                Records one Cash payment to @f.CustodianName covering the ticked vouchers@(f.Withdrawal_ID is null ? "" : $", funded from withdrawal {f.Withdrawal_ID}"),
                 dated today. That is when the receipts reach the cash book and budget performance.
             </span>
         </div>

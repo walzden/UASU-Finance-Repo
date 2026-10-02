@@ -32,7 +32,7 @@ public interface ICashFloatService
 
     Task<IReadOnlyList<string>> RetireAsync(string floatId, IReadOnlyCollection<int> receiptLineIds);
     Task<IEnumerable<CashFloatVoucherRow>> GetRetirementVouchersAsync(string floatId);
-    Task<IReadOnlyList<string>> SettleAsync(string floatId, IReadOnlyCollection<string> voucherIds);
+    Task<string> SettleAsync(string floatId, IReadOnlyCollection<string> voucherIds);
 
     Task<IEnumerable<CashFloatReturnRow>> GetReturnsAsync(string floatId);
     Task RecordReturnAsync(CashFloatReturnInputModel input, string recordedByOfficialId);
@@ -429,12 +429,13 @@ public class CashFloatService : ICashFloatService
     }
 
     // ------------------------------------------------------------------
-    // Settle: approved retirement vouchers -> ordinary Cash payments, one
-    // per voucher, linked to the float's withdrawal. RecordPaymentAsync's
-    // own triggers (trg_PaymentAllocations_RequireApproval etc.) still apply.
+    // Settle: approved retirement vouchers -> one ordinary Cash payment
+    // (they all share the custodian as payee), linked to the float's
+    // withdrawal. RecordPaymentAsync's own triggers
+    // (trg_PaymentAllocations_RequireApproval etc.) still apply.
     // ------------------------------------------------------------------
 
-    public async Task<IReadOnlyList<string>> SettleAsync(string floatId, IReadOnlyCollection<string> voucherIds)
+    public async Task<string> SettleAsync(string floatId, IReadOnlyCollection<string> voucherIds)
     {
         if (voucherIds.Count == 0)
             throw new InvalidOperationException("Tick at least one approved voucher to settle.");
@@ -453,7 +454,7 @@ public class CashFloatService : ICashFloatService
             throw new InvalidOperationException("Nothing was settled: " + string.Join(", ",
                 notReady.Select(v => $"{v.Voucher_ID} is {v.RetirementState.ToLowerInvariant()}")) + ".");
 
-        return await _voucherService.RecordPaymentAsync(new PaymentInputModel
+        var payments = await _voucherService.RecordPaymentAsync(new PaymentInputModel
         {
             Voucher_IDs = vouchers.Select(v => v.Voucher_ID).ToList(),
             Amount_Paid = vouchers.Sum(v => v.Amount),
@@ -461,6 +462,7 @@ public class CashFloatService : ICashFloatService
             Description = $"Settled from cash float {floatId} ({flt.Purpose}) held by {flt.CustodianName}",
             Withdrawal_Link = flt.Withdrawal_ID
         });
+        return payments.Single().Payment_ID;
     }
 
     // ------------------------------------------------------------------
