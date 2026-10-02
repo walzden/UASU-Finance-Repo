@@ -27,7 +27,7 @@ public interface IVoucherService
 
     Task<IEnumerable<SimpleOption>> GetFullyApprovedUnpaidVouchersAsync();
     Task<IEnumerable<ApprovedUnpaidVoucherRow>> GetApprovedUnpaidVouchersDetailedAsync();
-    Task<string> RecordPaymentAsync(PaymentInputModel input);
+    Task<IReadOnlyList<string>> RecordPaymentAsync(PaymentInputModel input);
 
     Task<IEnumerable<PaymentAcknowledgementOption>> GetPaymentsAwaitingAcknowledgementAsync();
     Task RecordAcknowledgementAsync(AcknowledgementInputModel input);
@@ -524,17 +524,16 @@ public class VoucherService : IVoucherService
         return await conn.QueryAsync<ApprovedUnpaidVoucherRow>(sql);
     }
 
-    // Settles one or more approved vouchers together with a single
-    // payment - each voucher in Voucher_IDs is allocated in full (its
-    // own Amount, looked up here rather than trusted from the form),
-    // so Amount_Paid is expected to equal their sum. Everything runs in
-    // one real SQL transaction: previously this method's three-ish
-    // inserts had no explicit transaction at all (a documented gap -
-    // a failure partway through could leave a payment with only some
-    // of its intended allocations, or no withdrawal link). That risk
-    // is much more real now that a single submission can span several
-    // PaymentAllocations inserts instead of just one.
-    public async Task<string> RecordPaymentAsync(PaymentInputModel input)
+    // Settles one or more approved vouchers, recording a SEPARATE payment
+    // for each one - its own Payment_ID, for exactly that voucher's
+    // Amount (looked up here rather than trusted from the form), so each
+    // voucher has its own payment record, acknowledgement and charge.
+    // The mode, reference, bank account, description and withdrawal on
+    // the form apply to every one of them. All of it runs in one SQL
+    // transaction: a voucher failing a trigger rolls back every payment
+    // in the batch, so the Treasurer never ends up with only some of the
+    // ticked vouchers paid.
+    public async Task<IReadOnlyList<string>> RecordPaymentAsync(PaymentInputModel input)
     {
         using var conn = (SqlConnection)_db.CreateConnection();
         conn.Open();
@@ -542,44 +541,52 @@ public class VoucherService : IVoucherService
 
         try
         {
+            const string voucherAmountSql = "SELECT Amount FROM Vouchers WHERE Voucher_ID = @VoucherId;";
             const string insertPayment = @"
                 INSERT INTO Payments (Payment_Date, Payment_Mode, [Description], Amount_Paid, Reference_No, Bank_Account)
                 OUTPUT INSERTED.Payment_ID
-                VALUES (GETDATE(), @Payment_Mode, @Description, @Amount_Paid, @Reference_No, @Bank_Account);";
-
-            var paymentId = await conn.ExecuteScalarAsync<string>(insertPayment, input, transaction);
+                VALUES (GETDATE(), @Payment_Mode, @Description, @Amount, @Reference_No, @Bank_Account);";
 
             // trg_PaymentAllocations_RequireApproval and trg_PaymentStatusUpdate
-            // fire per-insert here, same as they would for a single-voucher
-            // payment - an unapproved voucher, or an amount exceeding what a
-            // voucher is actually worth, rolls back the whole transaction.
-            const string voucherAmountSql = "SELECT Amount FROM Vouchers WHERE Voucher_ID = @VoucherId;";
+            // fire per insert - an unapproved voucher, or an amount exceeding
+            // what a voucher is actually worth, rolls back the whole batch.
             const string insertAllocation = @"
                 INSERT INTO PaymentAllocations (Payment_ID, Voucher_ID, Allocated_Amount)
                 VALUES (@PaymentId, @VoucherId, @Amount);";
 
+            // Optional: if these payments were funded from cash drawn via a
+            // specific withdrawal, link each one to it for its own amount.
+            const string insertWithdrawalLink = @"
+                INSERT INTO WithdrawalPayments (Withdrawal_ID, Payment_ID, Allocated_Amount)
+                VALUES (@WithdrawalId, @PaymentId, @Amount);";
+
+            var paymentIds = new List<string>();
             foreach (var voucherId in input.Voucher_IDs)
             {
                 var voucherAmount = await conn.ExecuteScalarAsync<decimal>(voucherAmountSql, new { VoucherId = voucherId }, transaction);
+
+                var paymentId = await conn.ExecuteScalarAsync<string>(insertPayment, new
+                {
+                    input.Payment_Mode,
+                    input.Description,
+                    Amount = voucherAmount,
+                    input.Reference_No,
+                    input.Bank_Account
+                }, transaction);
+
                 await conn.ExecuteAsync(insertAllocation,
                     new { PaymentId = paymentId, VoucherId = voucherId, Amount = voucherAmount }, transaction);
-            }
 
-            // Optional: if this payment was funded from cash drawn via a
-            // specific withdrawal, link the two.
-            if (!string.IsNullOrWhiteSpace(input.Withdrawal_Link))
-            {
-                const string insertWithdrawalLink = @"
-                    INSERT INTO WithdrawalPayments (Withdrawal_ID, Payment_ID, Allocated_Amount)
-                    VALUES (@WithdrawalId, @PaymentId, @Amount);";
+                if (!string.IsNullOrWhiteSpace(input.Withdrawal_Link))
+                    await conn.ExecuteAsync(insertWithdrawalLink,
+                        new { WithdrawalId = input.Withdrawal_Link, PaymentId = paymentId, Amount = voucherAmount },
+                        transaction);
 
-                await conn.ExecuteAsync(insertWithdrawalLink,
-                    new { WithdrawalId = input.Withdrawal_Link, PaymentId = paymentId, Amount = input.Amount_Paid },
-                    transaction);
+                paymentIds.Add(paymentId!);
             }
 
             transaction.Commit();
-            return paymentId!;
+            return paymentIds;
         }
         catch
         {

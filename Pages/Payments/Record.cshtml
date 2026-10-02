@@ -4,8 +4,8 @@
 <h3 class="mb-3">Record a Payment</h3>
 <p class="text-muted">
     Only vouchers approved by both the Chairman and the Chapter Secretary appear below. Tick one or more
-    to settle together with a single payment - useful when several allowances for the same event are
-    disbursed as one transaction.
+    to pay them at once - each ticked voucher gets its own payment record, for its own amount, using the
+    payment details below.
 </p>
 
 @if (!string.IsNullOrEmpty(Model.StatusMessage))
@@ -64,9 +64,9 @@ else
             <div class="card-body">
                 <div class="row g-3">
                     <div class="col-md-6">
-                        <label class="form-label">Amount Paid (Sh.)</label>
+                        <label class="form-label">Total Paid (Sh.)</label>
                         <input asp-for="Input.Amount_Paid" type="number" step="0.01" class="form-control" readonly />
-                        <div class="form-text">Sum of the selected vouchers - settling them in full.</div>
+                        <div class="form-text">Sum of the selected vouchers. Each is paid in full as its own payment.</div>
                         <span asp-validation-for="Input.Amount_Paid" class="text-danger"></span>
                     </div>
                     <div class="col-md-6">
@@ -132,7 +132,7 @@ else
         });
 
         var submitBtn = document.getElementById('submitBtn');
-        submitBtn.textContent = checked.length <= 1 ? 'Record Payment' : 'Record Payment for ' + checked.length + ' Vouchers';
+        submitBtn.textContent = checked.length <= 1 ? 'Record Payment' : 'Record ' + checked.length + ' Payments (one per voucher)';
     }
 
     document.querySelectorAll('.voucher-check').forEach(function (cb) {
