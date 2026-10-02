@@ -7,6 +7,7 @@ namespace UASU_VoucherApprovals.Services;
 public interface ICertificationService
 {
     Task<(decimal CashBalance, decimal BankBalance)> GetBookBalancesAsync(int year, int month);
+    Task<(decimal CashBalance, decimal BankBalance)> GetBookBalancesAsOfAsync(DateTime asOf);
     Task<string> CertifyAsync(CertificationInputModel input, string certifiedByOfficialId);
     Task<IEnumerable<CertificationRow>> GetCertificationsAsync();
 
@@ -23,11 +24,17 @@ public class CertificationService : ICertificationService
         _db = db;
     }
 
-    public async Task<(decimal CashBalance, decimal BankBalance)> GetBookBalancesAsync(int year, int month)
+    public Task<(decimal CashBalance, decimal BankBalance)> GetBookBalancesAsync(int year, int month) =>
+        GetBookBalancesAsOfAsync(new DateTime(year, month, 1).AddMonths(1).AddDays(-1));
+
+    // Same balances as at any date, not just a month-end - the live cash
+    // position panel uses today. @MonthEnd in the SQL below is simply this
+    // cutoff date.
+    public async Task<(decimal CashBalance, decimal BankBalance)> GetBookBalancesAsOfAsync(DateTime asOf)
     {
         using var conn = _db.CreateConnection();
 
-        var monthEnd = new DateTime(year, month, 1).AddMonths(1).AddDays(-1);
+        var monthEnd = asOf.Date;
 
         // Cumulative to month-end, not just that month's movement -
         // "balance the cash book" means the running balance, the same

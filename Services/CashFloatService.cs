@@ -18,6 +18,7 @@ public interface ICashFloatService
     Task<IEnumerable<CashFloatRow>> GetFloatsAsync();
     Task<CashFloatRow?> GetFloatAsync(string floatId);
     Task<IEnumerable<CashFloatRow>> GetPositionsAsOfAsync(DateTime asOf);
+    Task<CashPosition> GetCashPositionAsync(DateTime asOf);
 
     Task<IEnumerable<SimpleOption>> GetCustodianOptionsAsync();
     Task<IEnumerable<SimpleOption>> GetExpenseBudgetCodesAsync();
@@ -49,11 +50,13 @@ public class CashFloatService : ICashFloatService
 
     private readonly IDbConnectionFactory _db;
     private readonly IVoucherService _voucherService;
+    private readonly ICertificationService _certificationService;
 
-    public CashFloatService(IDbConnectionFactory db, IVoucherService voucherService)
+    public CashFloatService(IDbConnectionFactory db, IVoucherService voucherService, ICertificationService certificationService)
     {
         _db = db;
         _voucherService = voucherService;
+        _certificationService = certificationService;
     }
 
     // ------------------------------------------------------------------
@@ -97,6 +100,24 @@ public class CashFloatService : ICashFloatService
         return await conn.QueryAsync<CashFloatRow>(
             PositionSql + " WHERE p.Closed_Date IS NULL OR p.Closed_Date > @AsOf ORDER BY p.Issue_Date, p.Float_ID;",
             new { AsOf = asOf.Date });
+    }
+
+    // Book Cash at a date, split into what the treasury holds and what is
+    // out in floats - for the cash position panel and the Balance Sheet.
+    public async Task<CashPosition> GetCashPositionAsync(DateTime asOf)
+    {
+        var (bookCash, _) = await _certificationService.GetBookBalancesAsOfAsync(asOf);
+        var floats = (await GetPositionsAsOfAsync(asOf)).ToList();
+
+        return new CashPosition
+        {
+            AsOf = asOf.Date,
+            BookCash = bookCash,
+            InFloats = floats.Sum(f => f.BookOutstanding),
+            FloatCashWithCustodians = floats.Sum(f => f.CashWithCustodian),
+            FloatReceiptsNotSettled = floats.Sum(f => f.Spent - f.Settled),
+            OpenFloats = floats.Count
+        };
     }
 
     // Cash is only ever handed to a sitting official.

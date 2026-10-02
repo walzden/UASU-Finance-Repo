@@ -13,6 +13,12 @@ public class BalanceSheetData
     public DateTime AsOfDate { get; set; }
 
     public decimal CashInHand { get; set; }
+
+    // Part of CashInHand out with cash float custodians at AsOfDate
+    // (fn_CashFloatPosition, SQL/032); the rest is with the treasury.
+    public decimal CashInFloats { get; set; }
+    public decimal CashWithTreasury => CashInHand - CashInFloats;
+
     public decimal BankBalance { get; set; }
     public decimal TotalAssets => CashInHand + BankBalance;
 

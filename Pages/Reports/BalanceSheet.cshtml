@@ -50,6 +50,17 @@
                 <td>Cash in Hand</td>
                 <td class="text-end">@Model.Data.CashInHand.ToString("N2")</td>
             </tr>
+            @if (Model.Data.CashInFloats != 0)
+            {
+                <tr class="small">
+                    <td class="ps-4">With the treasury</td>
+                    <td class="text-end text-muted">@Model.Data.CashWithTreasury.ToString("N2")</td>
+                </tr>
+                <tr class="small">
+                    <td class="ps-4">With cash float holders (incl. receipts not yet settled)</td>
+                    <td class="text-end text-muted">@Model.Data.CashInFloats.ToString("N2")</td>
+                </tr>
+            }
             <tr>
                 <td>Bank Balance</td>
                 <td class="text-end">@Model.Data.BankBalance.ToString("N2")</td>

@@ -28,6 +28,7 @@ public class IndexModel : PageModel
     public IEnumerable<CashFloatRow> Floats { get; set; } = Enumerable.Empty<CashFloatRow>();
     public IEnumerable<SimpleOption> Custodians { get; set; } = Enumerable.Empty<SimpleOption>();
     public IEnumerable<SimpleOption> Withdrawals { get; set; } = Enumerable.Empty<SimpleOption>();
+    public CashPosition CashPosition { get; set; } = new();
 
     // Success survives the redirect (PRG); an error is shown on the
     // re-rendered page only, so it isn't replayed on the next visit.
@@ -85,5 +86,6 @@ public class IndexModel : PageModel
         Floats = await _floatService.GetFloatsAsync();
         Custodians = await _floatService.GetCustodianOptionsAsync();
         Withdrawals = await _floatService.GetWithdrawalOptionsAsync();
+        CashPosition = await _floatService.GetCashPositionAsync(DateTime.Today);
     }
 }

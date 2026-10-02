@@ -151,6 +151,29 @@ public class CashFloatVoucherRow
     public string? Payment_ID { get; set; }
 }
 
+// Where the book Cash balance physically is at a date: with the treasury,
+// or out with float custodians (as cash, or as receipts not yet settled).
+// Built from CertificationService's book Cash and fn_CashFloatPosition, so
+// it agrees with Monthly Certification and the Balance Sheet.
+public class CashPosition
+{
+    public DateTime AsOf { get; set; }
+    public decimal BookCash { get; set; }
+
+    // Part of BookCash out in open floats (cash with custodians plus
+    // receipts they've spent that aren't settled yet).
+    public decimal InFloats { get; set; }
+    public decimal FloatCashWithCustodians { get; set; }
+    public decimal FloatReceiptsNotSettled { get; set; }
+    public int OpenFloats { get; set; }
+
+    public decimal CashWithTreasury => BookCash - InFloats;
+
+    // What a physical count across the treasury and every custodian
+    // should come to: unsettled receipts are already spent.
+    public decimal ExpectedPhysicalCash => BookCash - FloatReceiptsNotSettled;
+}
+
 public class CashFloatAttachment
 {
     public byte[] Attachment_Data { get; set; } = Array.Empty<byte>();

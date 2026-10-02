@@ -15,13 +15,15 @@ public class IndexModel : PageModel
     private readonly IDebtService _debtService;
     private readonly ICertificationService _certificationService;
     private readonly IBudgetPlanningService _budgetPlanningService;
+    private readonly ICashFloatService _cashFloatService;
 
-    public IndexModel(IReportService reportService, IDebtService debtService, ICertificationService certificationService, IBudgetPlanningService budgetPlanningService)
+    public IndexModel(IReportService reportService, IDebtService debtService, ICertificationService certificationService, IBudgetPlanningService budgetPlanningService, ICashFloatService cashFloatService)
     {
         _reportService = reportService;
         _debtService = debtService;
         _certificationService = certificationService;
         _budgetPlanningService = budgetPlanningService;
+        _cashFloatService = cashFloatService;
     }
 
     public decimal YtdIncome { get; set; }
@@ -48,6 +50,10 @@ public class IndexModel : PageModel
 
     public string? LastCertifiedPeriod { get; set; }
     public bool CertificationOverdue { get; set; }
+
+    // Live (as of today) split of book Cash between the treasury and
+    // cash float holders - see Pages/Shared/_CashPosition.cshtml.
+    public CashPosition CashPosition { get; set; } = new();
 
     public async Task<IActionResult> OnGetAsync()
     {
@@ -108,6 +114,8 @@ public class IndexModel : PageModel
         CertificationOverdue = latest is null
             || latest.Period_Year < expectedPeriod.Year
             || (latest.Period_Year == expectedPeriod.Year && latest.Period_Month < expectedPeriod.Month);
+
+        CashPosition = await _cashFloatService.GetCashPositionAsync(DateTime.Today);
 
         return Page();
     }

@@ -13,6 +13,8 @@
 {
     <div class="alert alert-success">@Model.StatusMessage</div>
 }
+
+<partial name="_CashPosition" model="Model.CashPosition" />
 @if (!string.IsNullOrEmpty(Model.ErrorMessage))
 {
     <div class="alert alert-danger">@Model.ErrorMessage</div>
@@ -82,35 +84,6 @@
 }
 else
 {
-    var open = Model.Floats.Where(f => !f.IsClosed).ToList();
-
-    <div class="row g-3 mb-3">
-        <div class="col-sm-4">
-            <div class="card text-center h-100">
-                <div class="card-body">
-                    <div class="text-muted small">Open floats</div>
-                    <div class="fs-4 fw-bold">@open.Count</div>
-                </div>
-            </div>
-        </div>
-        <div class="col-sm-4">
-            <div class="card text-center h-100 border-warning">
-                <div class="card-body">
-                    <div class="text-muted small">Cash with custodians</div>
-                    <div class="fs-4 fw-bold">@open.Sum(f => f.CashWithCustodian).ToString("N2")</div>
-                </div>
-            </div>
-        </div>
-        <div class="col-sm-4">
-            <div class="card text-center h-100 border-danger">
-                <div class="card-body">
-                    <div class="text-muted small">Receipts not yet settled</div>
-                    <div class="fs-4 fw-bold">@open.Sum(f => f.Spent - f.Settled).ToString("N2")</div>
-                </div>
-            </div>
-        </div>
-    </div>
-
     <a class="btn btn-outline-secondary btn-sm mb-3" href="?handler=ExportCsv">Export CSV</a>
     <table class="table table-bordered table-hover align-middle">
         <thead class="table-light">
