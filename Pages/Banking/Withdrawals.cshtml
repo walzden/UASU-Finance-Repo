@@ -53,6 +53,7 @@ else
                 <th class="text-end">Allocated to Payments (Sh.)</th>
                 <th class="text-end">Charges (Sh.)</th>
                 <th class="text-end">Remaining (Sh.)</th>
+                <th class="text-end" title="Part of Remaining handed out in cash floats and not yet settled or returned">of which in Cash Floats (Sh.)</th>
             </tr>
         </thead>
         <tbody>
@@ -67,6 +68,7 @@ else
                     <td class="text-end">@w.Allocated.ToString("N2")</td>
                     <td class="text-end">@w.Charges.ToString("N2")</td>
                     <td class="text-end @(w.Remaining > 0 ? "text-warning" : "text-success")">@w.Remaining.ToString("N2")</td>
+                    <td class="text-end">@(w.InFloats > 0 ? w.InFloats.ToString("N2") : "")</td>
                 </tr>
             }
         </tbody>

@@ -26,6 +26,10 @@ public class WithdrawalListRow
     public decimal Allocated { get; set; }
     public decimal Charges { get; set; }
     public decimal Remaining { get; set; }
+
+    // Part of Remaining handed out in cash floats and not yet settled or
+    // returned (fn_CashFloatPosition, SQL/032).
+    public decimal InFloats { get; set; }
     public string? Reference_No { get; set; }
     public string? Bank_Account { get; set; }
     public string? Notes { get; set; }

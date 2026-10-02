@@ -362,10 +362,20 @@ public class ReportService : IReportService
 
         var accountsPayable = await conn.ExecuteScalarAsync<decimal>(sql, new { AsOfDate = asOfDate });
 
+        // How much of Cash in Hand is out with cash float custodians -
+        // the same fn_CashFloatPosition figure Monthly Certification shows.
+        const string floatsSql = @"
+            SELECT ISNULL(SUM(BookOutstanding), 0)
+            FROM dbo.fn_CashFloatPosition(@AsOfDate)
+            WHERE Closed_Date IS NULL OR Closed_Date > @AsOfDate;";
+
+        var cashInFloats = await conn.ExecuteScalarAsync<decimal>(floatsSql, new { AsOfDate = asOfDate });
+
         return new BalanceSheetData
         {
             AsOfDate = asOfDate,
             CashInHand = cash,
+            CashInFloats = cashInFloats,
             BankBalance = bank,
             AccountsPayable = accountsPayable
         };

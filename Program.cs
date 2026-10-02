@@ -27,6 +27,7 @@ builder.Services.AddScoped<IHonorariaService, HonorariaService>();
 builder.Services.AddScoped<IBulkVoucherService, BulkVoucherService>();
 builder.Services.AddScoped<IActivityService, ActivityService>();
 builder.Services.AddScoped<IDebtPaymentService, DebtPaymentService>();
+builder.Services.AddScoped<ICashFloatService, CashFloatService>();
 builder.Services.AddScoped<IEmailService, SmtpEmailService>();
 
 builder.Services

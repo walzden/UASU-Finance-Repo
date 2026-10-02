@@ -60,11 +60,13 @@ public class RecordModel : PageModel
             // trg_PaymentAllocations_RequireApproval and trg_PaymentStatusUpdate
             // fire as a final server-side check even though the list was
             // already filtered to eligible vouchers.
-            var voucherCount = Input.Voucher_IDs.Count;
-            var paymentId = await _voucherService.RecordPaymentAsync(Input);
-            StatusMessage = voucherCount == 1
-                ? $"Payment {paymentId} recorded against voucher {Input.Voucher_IDs[0]}."
-                : $"Payment {paymentId} recorded against {voucherCount} vouchers.";
+            var payments = await _voucherService.RecordPaymentAsync(Input);
+            StatusMessage = payments.Count == 1
+                ? $"Payment {payments[0].Payment_ID} to {payments[0].PayeeDisplay} recorded against "
+                  + (payments[0].Voucher_IDs.Count == 1 ? $"voucher {payments[0].Voucher_IDs[0]}." : $"{payments[0].Voucher_IDs.Count} vouchers.")
+                : $"{payments.Count} payments recorded, one per payee: "
+                  + string.Join("; ", payments.Select(p =>
+                      $"{p.Payment_ID} to {p.PayeeDisplay} (Sh.{p.Amount:N2}, {string.Join(", ", p.Voucher_IDs)})")) + ".";
 
             // Redirect (PRG) rather than just re-rendering Page() here -
             // ApprovedVouchers was already loaded at the top of this
@@ -76,7 +78,7 @@ public class RecordModel : PageModel
             // already-paid voucher into a second payment.
             return RedirectToPage();
         }
-        catch (SqlException ex)
+        catch (Exception ex) when (ex is SqlException or InvalidOperationException)
         {
             StatusIsError = true;
             StatusMessage = ex.Message;

@@ -12,10 +12,12 @@ namespace UASU_VoucherApprovals.Pages.Certification;
 public class IndexModel : PageModel
 {
     private readonly ICertificationService _certificationService;
+    private readonly ICashFloatService _floatService;
 
-    public IndexModel(ICertificationService certificationService)
+    public IndexModel(ICertificationService certificationService, ICashFloatService floatService)
     {
         _certificationService = certificationService;
+        _floatService = floatService;
     }
 
     [BindProperty(SupportsGet = true)]
@@ -32,6 +34,13 @@ public class IndexModel : PageModel
 
     public decimal BookCashBalance { get; set; }
     public decimal BookBankBalance { get; set; }
+
+    // Cash floats open at month-end: part of BookCashBalance is out with
+    // their custodians rather than in the treasury's own hands.
+    public IEnumerable<CashFloatRow> Floats { get; set; } = Enumerable.Empty<CashFloatRow>();
+    public decimal CashInFloats => Floats.Sum(f => f.BookOutstanding);
+    public decimal FloatCashWithCustodians => Floats.Sum(f => f.CashWithCustodian);
+    public decimal FloatReceiptsNotSettled => Floats.Sum(f => f.Spent - f.Settled);
     public IEnumerable<CertificationRow> Certifications { get; set; } = Enumerable.Empty<CertificationRow>();
 
     [TempData]
@@ -71,7 +80,7 @@ public class IndexModel : PageModel
         Input.Period_Year = Year;
         Input.Period_Month = Month;
 
-        (BookCashBalance, BookBankBalance) = await _certificationService.GetBookBalancesAsync(Year, Month);
+        await LoadBalancesAsync(Year, Month);
     }
 
     public async Task<IActionResult> OnPostAsync()
@@ -84,7 +93,7 @@ public class IndexModel : PageModel
 
         if (!TryValidateModel(Input, nameof(Input)))
         {
-            (BookCashBalance, BookBankBalance) = await _certificationService.GetBookBalancesAsync(Input.Period_Year, Input.Period_Month);
+            await LoadBalancesAsync(Input.Period_Year, Input.Period_Month);
             Certifications = await _certificationService.GetCertificationsAsync();
             OpeningBalanceInput = await _certificationService.GetOpeningBalanceAsync();
             return Page();
@@ -104,7 +113,7 @@ public class IndexModel : PageModel
 
         if (!TryValidateModel(OpeningBalanceInput, nameof(OpeningBalanceInput)))
         {
-            (BookCashBalance, BookBankBalance) = await _certificationService.GetBookBalancesAsync(Year, Month);
+            await LoadBalancesAsync(Year, Month);
             Certifications = await _certificationService.GetCertificationsAsync();
             return Page();
         }
@@ -113,6 +122,12 @@ public class IndexModel : PageModel
         StatusMessage = "Opening balance updated.";
 
         return RedirectToPage(new { year = Year, month = Month });
+    }
+
+    private async Task LoadBalancesAsync(int year, int month)
+    {
+        (BookCashBalance, BookBankBalance) = await _certificationService.GetBookBalancesAsync(year, month);
+        Floats = await _floatService.GetPositionsAsOfAsync(new DateTime(year, month, 1).AddMonths(1).AddDays(-1));
     }
 
     // Full certification history - already uncapped, unlike the

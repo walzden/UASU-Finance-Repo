@@ -1,7 +1,23 @@
 @page
 @model UASU_VoucherApprovals.Pages.Vouchers.PendingModel
 
-<div class="d-flex align-items-center gap-2 mb-2">
+@{
+    var budgetLabels = Model.BudgetCodes.ToDictionary(b => b.Id, b => b.Label);
+}
+
+<div class="d-none d-print-block mb-3">
+    <div class="d-flex align-items-center gap-3">
+        <img src="~/images/uasu-Logo.jpg" alt="UASU logo" style="height:55px;"
+             onerror="this.onerror=null; this.src='/images/uasu-logo-placeholder.svg';" />
+        <div class="text-center flex-grow-1">
+            <h4 class="fw-bold mb-0">UNIVERSITIES' ACADEMIC STAFF UNION</h4>
+            <h5 class="mb-0">STATEMENT OF PENDING VOUCHERS</h5>
+            <div class="small text-muted">Awaiting approval &middot; As at @DateTime.Today.ToString("d MMMM yyyy")</div>
+        </div>
+    </div>
+</div>
+
+<div class="d-flex align-items-center gap-2 mb-2 d-print-none">
     <h3 class="mb-0">Pending Vouchers</h3>
     @if (Model.Vouchers.Any())
     {
@@ -9,11 +25,19 @@
         <span class="badge bg-secondary rounded-pill">Total Sh. @Model.Vouchers.Sum(v => v.Amount).ToString("N2")</span>
     }
 </div>
-<p class="text-muted mb-3">Every voucher still awaiting approval. Fix a typo or missing detail before it gets rejected for it &mdash; but only while nobody has approved it yet.</p>
+<p class="text-muted mb-3 d-print-none">Every voucher still awaiting approval. Fix a typo or missing detail before it gets rejected for it &mdash; but only while nobody has approved it yet.</p>
 
 @if (!string.IsNullOrEmpty(Model.StatusMessage))
 {
-    <div class="alert @(Model.StatusIsError ? "alert-danger" : "alert-success")">@Model.StatusMessage</div>
+    <div class="alert @(Model.StatusIsError ? "alert-danger" : "alert-success") d-print-none">@Model.StatusMessage</div>
+}
+
+@if (Model.Vouchers.Any())
+{
+    <div class="mb-3 d-print-none">
+        <button type="button" class="btn btn-primary" onclick="window.print()">Print / Save as PDF</button>
+        <span class="form-text ms-2">Prints every pending voucher below, without the edit controls.</span>
+    </div>
 }
 
 @if (!Model.Vouchers.Any())
@@ -26,14 +50,15 @@ else
         <thead class="table-light">
             <tr>
                 <th style="width:2rem;">#</th>
-                <th style="width:1.5rem;"></th>
+                <th class="d-print-none" style="width:1.5rem;"></th>
                 <th>Voucher</th>
                 <th>Date</th>
                 <th>Payee</th>
                 <th class="text-end">Amount</th>
+                <th>Budget line</th>
                 <th>Description</th>
                 <th>Approval status</th>
-                <th style="width:110px;">Action</th>
+                <th class="d-print-none" style="width:110px;">Action</th>
             </tr>
         </thead>
         <tbody>
@@ -45,18 +70,19 @@ else
 
                 <tr class="@(v.CanEdit ? "row-click" : "")" onclick="@(v.CanEdit ? $"toggleEdit('{rowId}')" : "")">
                     <td class="text-muted">@rowNum</td>
-                    <td>@if (v.CanEdit) { <span class="chevron" id="@(rowId)-chevron">&#9656;</span> }</td>
+                    <td class="d-print-none">@if (v.CanEdit) { <span class="chevron" id="@(rowId)-chevron">&#9656;</span> }</td>
                     <td>@v.Voucher_ID</td>
                     <td>@v.VoucherDate.ToString("yyyy-MM-dd")</td>
                     <td>@v.PayeeDisplay</td>
                     <td class="text-end">@v.Amount.ToString("N2")</td>
+                    <td>@(v.Budget_Link is not null && budgetLabels.TryGetValue(v.Budget_Link, out var budgetLabel) ? budgetLabel : v.Budget_Link)</td>
                     <td>@v.Description</td>
                     <td>
                         @if (v.ChairmanApproved) { <span class="badge bg-success">Chairman approved</span> }
                         @if (v.ChapterSecretaryApproved) { <span class="badge bg-success">Chapter Sec. approved</span> }
                         @if (v.CanEdit) { <span class="text-muted">None yet</span> }
                     </td>
-                    <td>
+                    <td class="d-print-none">
                         @if (v.CanEdit)
                         {
                             <button class="btn btn-outline-primary btn-sm" type="button" onclick="event.stopPropagation(); toggleEdit('@rowId')">Edit</button>
@@ -70,10 +96,10 @@ else
                 </tr>
                 @if (v.CanEdit)
                 {
-                    <tr id="@rowId" class="hidden-row">
+                    <tr id="@rowId" class="hidden-row edit-row">
                         <td></td>
                         <td></td>
-                        <td colspan="7" class="p-0">
+                        <td colspan="8" class="p-0">
                             <form method="post" class="edit-panel p-3 border-top">
                                 <input type="hidden" name="VoucherId" value="@v.Voucher_ID" />
                                 <input type="hidden" name="Input.Debt_Link" value="@v.Debt_Link" />
@@ -201,7 +227,8 @@ else
                 var incomeCount = Model.Vouchers.Count(v => v.Transaction_Type == "Income");
             }
             <tr>
-                <td colspan="5" class="text-end">
+                <td class="d-print-none"></td>
+                <td colspan="4" class="text-end">
                     Total pending (@Model.Vouchers.Count() @(Model.Vouchers.Count() == 1 ? "voucher" : "vouchers"))
                     @if (incomeCount > 0)
                     {
@@ -210,6 +237,7 @@ else
                 </td>
                 <td class="text-end">@Model.Vouchers.Sum(v => v.Amount).ToString("N2")</td>
                 <td colspan="3"></td>
+                <td class="d-print-none"></td>
             </tr>
         </tfoot>
     </table>
@@ -222,6 +250,18 @@ else
     .hidden-row { display: none; }
     .chevron { display: inline-block; transition: transform .15s ease; }
     .chevron.open { transform: rotate(90deg); }
+
+    /* Print / Save as PDF: the pending list under a letterhead, without
+       the expand chevrons, edit buttons or any open correction panel.
+       Badges keep their colours - browsers drop backgrounds when
+       printing unless told otherwise. */
+    @@media print {
+        tr.edit-row { display: none !important; }
+        table { font-size: 12px; }
+        tr { break-inside: avoid; }
+        thead { display: table-header-group; }
+        .badge { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    }
 </style>
 
 <script>
