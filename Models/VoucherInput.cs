@@ -220,9 +220,10 @@ public class OfficialOption
 
 public class PaymentInputModel
 {
-    // One or more approved, unpaid vouchers to settle. Each gets its own
-    // payment record for its own full Amount; Amount_Paid below is just
-    // the total of the batch, shown on the form.
+    // One or more approved, unpaid vouchers to settle, each in full (its
+    // own Amount). Vouchers for the same payee share one payment; each
+    // different payee gets its own. Amount_Paid below is just the total
+    // of the batch, shown on the form.
     [Required]
     [MinLength(1, ErrorMessage = "Select at least one voucher.")]
     public List<string> Voucher_IDs { get; set; } = new();
@@ -242,6 +243,15 @@ public class PaymentInputModel
     // withdrawal - RecordPaymentAsync also inserts a WithdrawalPayments
     // link row for each payment so they stay tied together.
     public string? Withdrawal_Link { get; set; }
+}
+
+// One payment created by RecordPaymentAsync - one per payee in the batch.
+public class RecordedPayment
+{
+    public string Payment_ID { get; set; } = string.Empty;
+    public string PayeeDisplay { get; set; } = string.Empty;
+    public decimal Amount { get; set; }
+    public List<string> Voucher_IDs { get; set; } = new();
 }
 
 public class AcknowledgementInputModel
