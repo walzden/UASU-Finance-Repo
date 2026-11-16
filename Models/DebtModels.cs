@@ -34,6 +34,10 @@ public class DebtOption
     public string Id { get; set; } = string.Empty;
     public string Label { get; set; } = string.Empty;
     public string? Description { get; set; }
+
+    // What's owed less what live vouchers already cover (SQL/035) - the
+    // most a new voucher for this debt may be for.
+    public decimal Remaining { get; set; }
 }
 
 // One row of the debt status/aging report - built from DebtSummary

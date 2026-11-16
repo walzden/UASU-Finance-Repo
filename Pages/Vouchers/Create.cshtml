@@ -114,14 +114,15 @@
         <div class="card-body row g-3">
             <div class="col-md-6">
                 <label asp-for="Input.Debt_Link" class="form-label">Pay toward an existing debt</label>
-                <select asp-for="Input.Debt_Link" class="form-select" onchange="toggleDebtMode(this.value); prefillDescription(this);">
+                <select asp-for="Input.Debt_Link" class="form-select" onchange="toggleDebtMode(this.value); prefillFromDebt(this);">
                     <option value="">-- not a debt payment --</option>
                     @foreach (var d in Model.OutstandingDebts)
                     {
-                        <option value="@d.Id" data-description="@d.Description">@d.Label</option>
+                        <option value="@d.Id" data-description="@d.Description"
+                                data-remaining="@d.Remaining.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)">@d.Label</option>
                     }
                 </select>
-                <div class="form-text">Fills in the payee from the debt and makes this an Expense.</div>
+                <div class="form-text">Fills in the payee from the debt and makes this an Expense. Debts already on a voucher that hasn't been rejected or voided aren't listed.</div>
             </div>
             <div class="col-md-6">
                 <label asp-for="Input.Supersedes_Voucher_ID" class="form-label">Corrects a rejected voucher</label>
@@ -359,11 +360,21 @@
     // description is a starting point, not an enforced value, since a
     // debt can be paid off across several vouchers each needing its own
     // note (e.g. which installment this one is).
-    function prefillDescription(select) {
+    // The amount starts as what's left to raise on the debt - lower it
+    // for an instalment; the server refuses anything above it.
+    function prefillFromDebt(select) {
         var selected = select.options[select.selectedIndex];
         var description = selected ? selected.getAttribute('data-description') : null;
         if (description) {
             document.querySelector('[name="Input.Description"]').value = description;
+        }
+        var remaining = selected ? selected.getAttribute('data-remaining') : null;
+        var amount = document.querySelector('[name="Input.Amount"]');
+        if (remaining) {
+            amount.value = remaining;
+            amount.max = remaining;
+        } else {
+            amount.removeAttribute('max');
         }
     }
 

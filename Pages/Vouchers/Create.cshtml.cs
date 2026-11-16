@@ -74,6 +74,21 @@ public class CreateModel : PageModel
         // Income-only auto-payment fields - orthogonal to the above too.
         VoucherFormValidation.NormalizeIncomePaymentFields(Input, ModelState);
 
+        // A friendly version of trg_Vouchers_DebtNotOverCommitted (SQL/035),
+        // checked against the list just reloaded - e.g. the other treasurer
+        // raised a voucher for this debt since this page was opened. The
+        // trigger still has the final say if both save at the same moment.
+        if (!string.IsNullOrWhiteSpace(Input.Debt_Link))
+        {
+            var debt = OutstandingDebts.FirstOrDefault(d => d.Id == Input.Debt_Link);
+            if (debt is null)
+                ModelState.AddModelError(nameof(Input.Debt_Link),
+                    $"Debt {Input.Debt_Link} is already fully covered by vouchers that haven't been rejected or voided - check Pending Vouchers.");
+            else if (Input.Amount > debt.Remaining)
+                ModelState.AddModelError(nameof(Input.Amount),
+                    $"Debt {debt.Id} only has Sh. {debt.Remaining:N2} left to raise a voucher for.");
+        }
+
         if (!ModelState.IsValid)
             return Page();
 

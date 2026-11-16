@@ -47,23 +47,25 @@ public class DebtService : IDebtService
         // if Is_Settled (a flag set separately, by a trigger) ever fell
         // behind the actual running balance - only debts that
         // genuinely still owe money are offered here.
+        // Only debts with something still to raise a voucher for: what's
+        // owed less what live (not rejected, not voided) vouchers already
+        // cover, paid or not - fn_DebtCommitments (SQL/035), the same
+        // definition trg_Vouchers_DebtNotOverCommitted enforces. Without
+        // this, a debt with a voucher awaiting approval stayed listed and
+        // could be raised a second time.
         const string sql = @"
             SELECT ds.Debt_ID AS Id,
                    ds.Debt_ID + ' - ' + COALESCE(o.FullName, s.Business_Name, 'Unknown')
-                   + ' - Sh.' + FORMAT(ds.Balance,'N2') + ' owed' AS Label,
-                   ds.[Description]
+                   + ' - Sh.' + FORMAT(ds.Total_Owed - ISNULL(c.Committed, 0),'N2') + ' to raise'
+                   + CASE WHEN c.Committed > 0 THEN ' (of Sh.' + FORMAT(ds.Total_Owed,'N2') + ')' ELSE '' END AS Label,
+                   ds.[Description],
+                   ds.Total_Owed - ISNULL(c.Committed, 0) AS Remaining
             FROM DebtSummary ds
+            LEFT JOIN dbo.fn_DebtCommitments() c ON c.Debt_ID = ds.Debt_ID
             LEFT JOIN Ref_Officials o ON o.OfficialID = ds.Official_Link
             LEFT JOIN Ref_Suppliers s ON s.Supplier_ID = ds.Supplier_Link
             WHERE ds.Balance > 0
-              -- A debt already on a live (not rejected) voucher raised from Pay Debts is
-              -- spoken for; offering it here too would let it be paid twice.
-              AND NOT EXISTS (
-                    SELECT 1 FROM VoucherDebts vd
-                    INNER JOIN Vouchers vv ON vv.Voucher_ID = vd.Voucher_ID
-                    WHERE vd.Debt_ID = ds.Debt_ID
-                      AND vv.Voided_Date IS NULL
-                      AND NOT EXISTS (SELECT 1 FROM Voucher_Approvals va WHERE va.Voucher_ID = vd.Voucher_ID AND va.Approval_Status = 'Rejected'))
+              AND ds.Total_Owed - ISNULL(c.Committed, 0) > 0
             ORDER BY ds.Date_Incurred;";
 
         return await conn.QueryAsync<DebtOption>(sql);
