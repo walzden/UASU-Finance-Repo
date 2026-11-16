@@ -150,7 +150,7 @@ else
                                 @foreach (var d in Model.SettledRows)
                                 {
                                     <tr>
-                                        <td>@d.Debt_ID</td>
+                                        <td class="text-nowrap"><a asp-page="/Debts/Details" asp-route-id="@d.Debt_ID">@d.Debt_ID</a></td>
                                         <td>@d.CreditorName</td>
                                         <td>@d.Date_Incurred.ToString("yyyy-MM-dd")</td>
                                         <td>@d.Description</td>
@@ -201,6 +201,8 @@ else
                                     <th class="text-end">Owed (Sh.)</th>
                                     <th class="text-end">Paid (Sh.)</th>
                                     <th class="text-end">Balance (Sh.)</th>
+                                    <th class="text-end" title="Part of the balance already on a voucher awaiting approval or payment">On vouchers (Sh.)</th>
+                                    <th class="text-end" title="Part of the balance not on any voucher yet">Still to raise (Sh.)</th>
                                     <th>Status</th>
                                     <th>Aging</th>
                                 </tr>
@@ -209,13 +211,15 @@ else
                                 @foreach (var d in Model.UnpaidRows)
                                 {
                                     <tr>
-                                        <td>@d.Debt_ID</td>
+                                        <td class="text-nowrap"><a asp-page="/Debts/Details" asp-route-id="@d.Debt_ID">@d.Debt_ID</a></td>
                                         <td>@d.CreditorName</td>
                                         <td>@d.Date_Incurred.ToString("yyyy-MM-dd")</td>
                                         <td>@d.Description</td>
                                         <td class="text-end">@d.Total_Owed.ToString("N2")</td>
                                         <td class="text-end">@d.TotalAllocated.ToString("N2")</td>
                                         <td class="text-end">@d.Balance.ToString("N2")</td>
+                                        <td class="text-end">@(d.AwaitingPayment == 0 ? "–" : d.AwaitingPayment.ToString("N2"))</td>
+                                        <td class="text-end">@(d.StillToRaise == 0 ? "–" : d.StillToRaise.ToString("N2"))</td>
                                         <td>
                                             <span class="badge @(d.SettlementStatus == "Partially Paid" ? "bg-warning text-dark" : "bg-secondary")">@d.SettlementStatus</span>
                                         </td>
@@ -241,6 +245,8 @@ else
                                     <td class="text-end">@Model.UnpaidRows.Sum(d => d.Total_Owed).ToString("N2")</td>
                                     <td class="text-end">@Model.UnpaidRows.Sum(d => d.TotalAllocated).ToString("N2")</td>
                                     <td class="text-end">@Model.UnpaidRows.Sum(d => d.Balance).ToString("N2")</td>
+                                    <td class="text-end">@Model.UnpaidRows.Sum(d => d.AwaitingPayment).ToString("N2")</td>
+                                    <td class="text-end">@Model.UnpaidRows.Sum(d => d.StillToRaise).ToString("N2")</td>
                                     <td colspan="2"></td>
                                 </tr>
                             </tfoot>

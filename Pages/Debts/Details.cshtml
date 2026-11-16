@@ -1,0 +1,204 @@
+@page
+@model UASU_VoucherApprovals.Pages.Debts.DetailsModel
+@{
+    var d = Model.Detail.Debt;
+    var live = Model.Detail.Vouchers.Where(v => v.IsLive).ToList();
+    var dead = Model.Detail.Vouchers.Where(v => !v.IsLive).ToList();
+    string StatusBadge(string s) => s switch
+    {
+        "Paid" => "bg-success",
+        "Partially Paid" => "bg-warning text-dark",
+        "Approved - not paid" => "bg-primary",
+        "Awaiting approval" => "bg-info text-dark",
+        "Rejected" => "bg-danger",
+        "Voided" => "bg-secondary",
+        _ => "bg-light text-dark"
+    };
+}
+
+<style>
+    @@media print {
+        .badge { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        table { font-size: 12px; }
+    }
+</style>
+
+<div class="d-print-none mb-2">
+    <a asp-page="/Reports/Debts">&larr; Debt Status</a>
+</div>
+
+<div class="d-flex flex-wrap align-items-baseline gap-2 mb-1">
+    <h3 class="mb-0">@d.Debt_ID</h3>
+    <span class="badge @(d.SettlementStatus switch { "Settled" => "bg-success", "Partially Paid" => "bg-warning text-dark", _ => "bg-secondary" })">@d.SettlementStatus</span>
+    @if (d.SettlementStatus != "Settled")
+    {
+        <span class="text-muted small">@d.DaysOutstanding days outstanding</span>
+    }
+</div>
+<p class="mb-3">
+    Owed to <strong>@d.CreditorName</strong> (@d.Creditor_Type) &middot; incurred @d.Date_Incurred.ToString("d MMM yyyy")
+    @if (!string.IsNullOrWhiteSpace(d.Invoice_No)) { <span>&middot; invoice @d.Invoice_No</span> }
+    <br />
+    <span class="text-muted">@d.Description</span>
+</p>
+
+@* The four figures always add up: Paid + Awaiting payment + Still to raise = Owed. *@
+<div class="row g-3 mb-2">
+    <div class="col-6 col-lg-3">
+        <div class="card text-center h-100">
+            <div class="card-body">
+                <div class="text-muted small">Owed</div>
+                <div class="fs-4 fw-bold">@d.Total_Owed.ToString("N2")</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="card text-center h-100 border-success">
+            <div class="card-body">
+                <div class="text-muted small">Paid</div>
+                <div class="fs-4 fw-bold text-success">@d.TotalAllocated.ToString("N2")</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="card text-center h-100 border-primary">
+            <div class="card-body">
+                <div class="text-muted small">On vouchers, awaiting payment</div>
+                <div class="fs-4 fw-bold text-primary">@d.AwaitingPayment.ToString("N2")</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="card text-center h-100 border-danger">
+            <div class="card-body">
+                <div class="text-muted small">Still to raise a voucher for</div>
+                <div class="fs-4 fw-bold text-danger">@d.StillToRaise.ToString("N2")</div>
+            </div>
+        </div>
+    </div>
+</div>
+<p class="form-text mb-4">
+    Paid + awaiting payment + still to raise = owed. "Awaiting payment" is the part already on a voucher that is
+    waiting for approval or approved but not yet paid; New Voucher only offers the "still to raise" part.
+</p>
+
+<div class="mb-4 d-print-none">
+    <button type="button" class="btn btn-primary" onclick="window.print()">Print / Save as PDF</button>
+</div>
+
+<h5>Vouchers for this debt</h5>
+@if (!live.Any())
+{
+    <p class="text-muted">No voucher has been raised for this debt yet.</p>
+}
+else
+{
+    <div class="table-responsive">
+        <table class="table table-bordered align-middle">
+            <thead class="table-light">
+                <tr>
+                    <th>Voucher</th>
+                    <th>Date</th>
+                    <th>Description</th>
+                    <th class="text-end">For this debt (Sh.)</th>
+                    <th class="text-end">Paid (Sh.)</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var v in live)
+                {
+                    <tr>
+                        <td class="text-nowrap">@v.Voucher_ID</td>
+                        <td class="text-nowrap">@v.VoucherDate.ToString("yyyy-MM-dd")</td>
+                        <td>
+                            @v.Description
+                            @if (v.SharedWithOtherDebts)
+                            {
+                                <div class="form-text">Pay Debts voucher of Sh. @v.VoucherAmount.ToString("N2") covering other debts too; this debt's part is shown.</div>
+                            }
+                        </td>
+                        <td class="text-end">@v.DebtShare.ToString("N2")</td>
+                        <td class="text-end">@v.PaidOnVoucher.ToString("N2")</td>
+                        <td>
+                            <span class="badge @StatusBadge(v.Status)">@v.Status</span>
+                            @if (!string.IsNullOrWhiteSpace(v.StatusNote)) { <div class="form-text">@v.StatusNote</div> }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+            <tfoot class="table-light fw-bold">
+                <tr>
+                    <td colspan="3">Total on vouchers</td>
+                    <td class="text-end">@live.Sum(v => v.DebtShare).ToString("N2")</td>
+                    <td class="text-end">@live.Sum(v => v.PaidOnVoucher).ToString("N2")</td>
+                    <td></td>
+                </tr>
+            </tfoot>
+        </table>
+    </div>
+}
+
+@if (dead.Any())
+{
+    <details class="mb-4">
+        <summary class="text-muted">@dead.Count rejected or voided voucher(s) &mdash; not counted</summary>
+        <table class="table table-sm table-bordered align-middle mt-2">
+            <thead class="table-light">
+                <tr><th>Voucher</th><th>Date</th><th class="text-end">For this debt (Sh.)</th><th>Status</th><th>Reason</th></tr>
+            </thead>
+            <tbody>
+                @foreach (var v in dead)
+                {
+                    <tr>
+                        <td class="text-nowrap">@v.Voucher_ID</td>
+                        <td class="text-nowrap">@v.VoucherDate.ToString("yyyy-MM-dd")</td>
+                        <td class="text-end">@v.DebtShare.ToString("N2")</td>
+                        <td><span class="badge @StatusBadge(v.Status)">@v.Status</span></td>
+                        <td>@v.StatusNote</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </details>
+}
+
+<h5>Payments</h5>
+@if (!Model.Detail.Payments.Any())
+{
+    <p class="text-muted">Nothing has been paid on this debt yet.</p>
+}
+else
+{
+    <div class="table-responsive">
+        <table class="table table-bordered align-middle">
+            <thead class="table-light">
+                <tr>
+                    <th>Payment</th>
+                    <th>Date</th>
+                    <th>Mode</th>
+                    <th>Reference</th>
+                    <th>Voucher</th>
+                    <th class="text-end">Amount (Sh.)</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var p in Model.Detail.Payments)
+                {
+                    <tr>
+                        <td class="text-nowrap">@p.Payment_ID</td>
+                        <td class="text-nowrap">@p.Payment_Date.ToString("yyyy-MM-dd")</td>
+                        <td>@p.Payment_Mode</td>
+                        <td>@p.Reference_No</td>
+                        <td class="text-nowrap">@p.Voucher_ID</td>
+                        <td class="text-end">@p.Allocated_Amount.ToString("N2")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+    @if (live.Any(v => v.SharedWithOtherDebts))
+    {
+        <p class="form-text">Amounts are what was paid on each voucher; for a Pay Debts voucher covering several debts, this debt's share of it is in "Paid" above.</p>
+    }
+}

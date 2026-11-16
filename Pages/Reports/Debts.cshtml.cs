@@ -65,12 +65,12 @@ public class DebtsModel : PageModel
             .ThenBy(d => d.Date_Incurred);
 
         var csv = CsvExport.Build(
-            new[] { "Group", "Debt", "Creditor", "Date Incurred", "Description", "Owed", "Paid", "Balance", "Status", "Aging" },
+            new[] { "Group", "Debt", "Creditor", "Date Incurred", "Description", "Owed", "Paid", "Balance", "On Vouchers", "Still To Raise", "Status", "Aging" },
             filtered.Select(d => new object?[]
             {
                 d.SettlementStatus == "Settled" ? "Settled" : "Unpaid",
                 d.Debt_ID, d.CreditorName, d.Date_Incurred, d.Description,
-                d.Total_Owed, d.TotalAllocated, d.Balance, d.SettlementStatus, d.AgingBucket
+                d.Total_Owed, d.TotalAllocated, d.Balance, d.AwaitingPayment, d.StillToRaise, d.SettlementStatus, d.AgingBucket
             }));
 
         return File(csv, "text/csv", "DebtStatus.csv");
