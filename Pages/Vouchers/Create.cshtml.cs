@@ -82,10 +82,10 @@ public class CreateModel : PageModel
         {
             var debt = OutstandingDebts.FirstOrDefault(d => d.Id == Input.Debt_Link);
             if (debt is null)
-                ModelState.AddModelError(nameof(Input.Debt_Link),
+                ModelState.AddModelError("Input." + nameof(Input.Debt_Link),
                     $"Debt {Input.Debt_Link} is already fully covered by vouchers that haven't been rejected or voided - check Pending Vouchers.");
             else if (Input.Amount > debt.Remaining)
-                ModelState.AddModelError(nameof(Input.Amount),
+                ModelState.AddModelError("Input." + nameof(Input.Amount),
                     $"Debt {debt.Id} only has Sh. {debt.Remaining:N2} left to raise a voucher for.");
         }
 

@@ -10,6 +10,12 @@ namespace UASU_VoucherApprovals.Utilities;
 // validation message instead of a raw SQL error either way.
 public static class VoucherFormValidation
 {
+    // Both pages bind the form as [BindProperty] Input, so its fields post
+    // as "Input.<Name>". Errors must use the same key for asp-validation-for
+    // to show them under the right field (and for the field to be marked
+    // red); a bare "<Name>" key only ever reached the summary.
+    private static string Key(string field) => "Input." + field;
+
     public static void NormalizePayeeFields(VoucherInputModel input, ModelStateDictionary modelState)
     {
         // Blank out whichever payee fields don't apply to the chosen
@@ -20,25 +26,25 @@ public static class VoucherFormValidation
                 input.Supplier_Link = null;
                 input.Manual_Payee_Name = null;
                 if (string.IsNullOrWhiteSpace(input.Official_Link))
-                    modelState.AddModelError(nameof(input.Official_Link), "Select an official.");
+                    modelState.AddModelError(Key(nameof(input.Official_Link)), "Select an official.");
                 break;
             case "Supplier":
                 input.Official_Link = null;
                 input.Manual_Payee_Name = null;
                 if (string.IsNullOrWhiteSpace(input.Supplier_Link))
-                    modelState.AddModelError(nameof(input.Supplier_Link), "Select a supplier.");
+                    modelState.AddModelError(Key(nameof(input.Supplier_Link)), "Select a supplier.");
                 break;
             default: // One-Time, Donor, Income Source
                 input.Official_Link = null;
                 input.Supplier_Link = null;
                 if (string.IsNullOrWhiteSpace(input.Manual_Payee_Name))
-                    modelState.AddModelError(nameof(input.Manual_Payee_Name), "Enter a payee name.");
+                    modelState.AddModelError(Key(nameof(input.Manual_Payee_Name)), "Enter a payee name.");
 
                 // Reg. 6(1)(e) only applies to money paid OUT - a Donor/
                 // Income Source entry (money coming IN) reuses this same
                 // field for who gave the union money, not a recipient.
                 if (input.Transaction_Type == "Expense" && string.IsNullOrWhiteSpace(input.Manual_Payee_Address))
-                    modelState.AddModelError(nameof(input.Manual_Payee_Address),
+                    modelState.AddModelError(Key(nameof(input.Manual_Payee_Address)),
                         "Enter the payee's address (required on expense payments per the Labour Relations (Accounts) Regulations).");
                 break;
         }
@@ -61,17 +67,17 @@ public static class VoucherFormValidation
         }
 
         if (string.IsNullOrWhiteSpace(input.Traveler_Name))
-            modelState.AddModelError(nameof(input.Traveler_Name), "Enter who travelled.");
+            modelState.AddModelError(Key(nameof(input.Traveler_Name)), "Enter who travelled.");
         if (string.IsNullOrWhiteSpace(input.Travel_From))
-            modelState.AddModelError(nameof(input.Travel_From), "Enter where they travelled from.");
+            modelState.AddModelError(Key(nameof(input.Travel_From)), "Enter where they travelled from.");
         if (string.IsNullOrWhiteSpace(input.Travel_To))
-            modelState.AddModelError(nameof(input.Travel_To), "Enter where they travelled to.");
+            modelState.AddModelError(Key(nameof(input.Travel_To)), "Enter where they travelled to.");
         if (string.IsNullOrWhiteSpace(input.Travel_Mode))
-            modelState.AddModelError(nameof(input.Travel_Mode), "Enter the mode of transport.");
+            modelState.AddModelError(Key(nameof(input.Travel_Mode)), "Enter the mode of transport.");
         if (input.Travel_Date is null)
-            modelState.AddModelError(nameof(input.Travel_Date), "Enter the date of travel.");
+            modelState.AddModelError(Key(nameof(input.Travel_Date)), "Enter the date of travel.");
         if (string.IsNullOrWhiteSpace(input.Travel_Reason))
-            modelState.AddModelError(nameof(input.Travel_Reason), "Enter the reason for the journey.");
+            modelState.AddModelError(Key(nameof(input.Travel_Reason)), "Enter the reason for the journey.");
     }
 
     // Income-only auto-payment fields. Non-Income vouchers never show
@@ -99,6 +105,6 @@ public static class VoucherFormValidation
         }
 
         if (string.IsNullOrWhiteSpace(input.Payment_Mode))
-            modelState.AddModelError(nameof(input.Payment_Mode), "Select how this income was received.");
+            modelState.AddModelError(Key(nameof(input.Payment_Mode)), "Select how this income was received.");
     }
 }
