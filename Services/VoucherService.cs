@@ -16,9 +16,11 @@ public interface IVoucherService
     Task<IEnumerable<SimpleOption>> GetSuppliersAsync();
     Task<IEnumerable<RejectedVoucherRow>> GetRejectedVouchersAwaitingCorrectionAsync();
     Task<string> CreateVoucherAsync(VoucherInputModel input);
+    Task<IReadOnlyList<PossibleDuplicateRow>> FindPossibleDuplicatesAsync(VoucherInputModel input);
 
     Task<IEnumerable<PendingVoucherRow>> GetPendingVouchersAsync();
     Task UpdateVoucherAsync(VoucherInputModel input, string voucherId);
+    Task VoidVoucherAsync(string voucherId, string officialId, string reason);
 
     Task<IEnumerable<ApprovedVoucherRow>> GetApprovedVouchersAsync(DateTime start, DateTime end);
     Task<IEnumerable<VoucherApprovalActionRow>> GetVoucherApprovalActionsAsync(DateTime start, DateTime end);
@@ -90,6 +92,7 @@ public class VoucherService : IVoucherService
             LEFT JOIN VoucherApprovalStatus vas ON vas.Voucher_ID = v.Voucher_ID
             LEFT JOIN Ref_BudgetCodes bc ON bc.Budget_ID = v.Budget_Link
             WHERE v.Is_Legacy = 0
+              AND v.Voided_Date IS NULL
               -- Income is recorded directly (VoucherPaymentEligible treats
               -- every Income voucher as payment-eligible regardless of
               -- approval - see SQL/021) rather than routed through
@@ -214,43 +217,131 @@ public class VoucherService : IVoucherService
             INNER JOIN Voucher_Approvals va ON va.Voucher_ID = v.Voucher_ID AND va.Approval_Status = 'Rejected'
             INNER JOIN Ref_Officials ro ON ro.OfficialID = va.Approver_ID
             WHERE v.Is_Legacy = 0
+              -- A voided voucher (e.g. a rejected duplicate) needs no correction.
+              AND v.Voided_Date IS NULL
               AND NOT EXISTS (SELECT 1 FROM Vouchers v2 WHERE v2.Supersedes_Voucher_ID = v.Voucher_ID)
             ORDER BY va.Approval_Date DESC;";
 
         return await conn.QueryAsync<RejectedVoucherRow>(sql);
     }
 
+    // If this voucher pays toward an existing debt, the debt's own
+    // creditor is authoritative - override whatever the payee fields say
+    // rather than trusting them to already agree. A debt always
+    // represents money the union owes, so it's always an Expense
+    // regardless of what the form's dropdown had. Shared by create,
+    // update and the duplicate check, so all three see the same payee.
+    private static async Task ApplyDebtOverrideAsync(System.Data.IDbConnection conn, VoucherInputModel input)
+    {
+        if (string.IsNullOrWhiteSpace(input.Debt_Link))
+            return;
+
+        const string debtSql = @"
+            SELECT Creditor_Type, Official_link AS Official_Link, Supplier_link AS Supplier_Link
+            FROM Debt_Register WHERE Debt_ID = @DebtId;";
+
+        var debt = await conn.QuerySingleOrDefaultAsync(debtSql, new { DebtId = input.Debt_Link });
+        if (debt is null)
+            return;
+
+        input.Transaction_Type = "Expense";
+        input.Payee_Category = (string)debt.Creditor_Type;
+        input.Official_Link = debt.Official_Link;
+        input.Supplier_Link = debt.Supplier_Link;
+        input.Manual_Payee_Name = null;
+        // The debt's own creditor now has a reference-row address
+        // (Ref_Officials/Ref_Suppliers) instead - a one-time address typed
+        // against this voucher would be stale the next time the same debt
+        // is paid down.
+        input.Manual_Payee_Address = null;
+    }
+
+    // Live (not rejected, not voided) vouchers that look like the one
+    // about to be created: same transaction type and payee, and either
+    // the same amount within 30 days either side, or the exact same
+    // description. A warning only - the page lets the Treasurer confirm
+    // and go ahead, since some payments genuinely repeat (monthly
+    // honoraria for the same official, say).
+    public async Task<IReadOnlyList<PossibleDuplicateRow>> FindPossibleDuplicatesAsync(VoucherInputModel input)
+    {
+        using var conn = _db.CreateConnection();
+        await ApplyDebtOverrideAsync(conn, input);
+
+        const string sql = @"
+            SELECT TOP 5
+                v.Voucher_ID, v.VoucherDate, v.Amount, v.[Description],
+                COALESCE(o.FullName, s.Business_Name, v.Manual_Payee_Name) AS PayeeDisplay,
+                CASE
+                    WHEN v.Current_Status IN ('Paid', 'Partially Paid') THEN v.Current_Status
+                    WHEN vas.FullyApproved = 1 THEN 'Approved - not paid'
+                    ELSE 'Awaiting approval'
+                END AS Status
+            FROM Vouchers v
+            LEFT JOIN VoucherApprovalStatus vas ON vas.Voucher_ID = v.Voucher_ID
+            LEFT JOIN Ref_Officials o ON o.OfficialID = v.Official_Link
+            LEFT JOIN Ref_Suppliers s ON s.Supplier_ID = v.Supplier_Link
+            WHERE v.Voided_Date IS NULL
+              AND NOT EXISTS (SELECT 1 FROM Voucher_Approvals va
+                              WHERE va.Voucher_ID = v.Voucher_ID AND va.Approval_Status = 'Rejected')
+              AND v.Transaction_Type = @Transaction_Type
+              AND (
+                    (@Official_Link IS NOT NULL AND v.Official_Link = @Official_Link)
+                 OR (@Supplier_Link IS NOT NULL AND v.Supplier_Link = @Supplier_Link)
+                 OR (@Manual_Payee_Name IS NOT NULL
+                     AND UPPER(LTRIM(RTRIM(v.Manual_Payee_Name))) = UPPER(LTRIM(RTRIM(@Manual_Payee_Name))))
+              )
+              AND (
+                    (v.Amount = @Amount AND ABS(DATEDIFF(DAY, v.VoucherDate, @VoucherDate)) <= 30)
+                 OR (@Description IS NOT NULL AND LTRIM(RTRIM(@Description)) <> ''
+                     AND LTRIM(RTRIM(v.[Description])) = LTRIM(RTRIM(@Description)))
+              )
+            ORDER BY ABS(DATEDIFF(DAY, v.VoucherDate, @VoucherDate)), v.Voucher_ID DESC;";
+
+        // Only the payee field that matches the category counts - the
+        // form posts all three regardless of which one is showing.
+        var official = input.Payee_Category == "Official" ? input.Official_Link : null;
+        var supplier = input.Payee_Category == "Supplier" ? input.Supplier_Link : null;
+        var manual = input.Payee_Category is not ("Official" or "Supplier") && !string.IsNullOrWhiteSpace(input.Manual_Payee_Name)
+            ? input.Manual_Payee_Name : null;
+
+        return (await conn.QueryAsync<PossibleDuplicateRow>(sql, new
+        {
+            input.Transaction_Type,
+            Official_Link = official,
+            Supplier_Link = supplier,
+            Manual_Payee_Name = manual,
+            input.Amount,
+            input.VoucherDate,
+            input.Description
+        })).ToList();
+    }
+
+    // Marks a voucher Voided (final - it keeps its number but can never be
+    // approved, edited or paid). SQL/033's trigger and CHECK constraint
+    // refuse a voucher that already has a payment, or retires cash float
+    // receipts; the SqlException is surfaced by the calling page.
+    public async Task VoidVoucherAsync(string voucherId, string officialId, string reason)
+    {
+        using var conn = _db.CreateConnection();
+
+        const string sql = @"
+            UPDATE Vouchers SET
+                Current_Status = 'Voided',
+                Voided_Date = GETDATE(),
+                Voided_By = @OfficialId,
+                Void_Reason = @Reason
+            WHERE Voucher_ID = @VoucherId AND Voided_Date IS NULL;";
+
+        var rows = await conn.ExecuteAsync(sql, new { VoucherId = voucherId, OfficialId = officialId, Reason = reason.Trim() });
+        if (rows == 0)
+            throw new InvalidOperationException($"Voucher {voucherId} was not found or is already voided.");
+    }
+
     public async Task<string> CreateVoucherAsync(VoucherInputModel input)
     {
         using var conn = _db.CreateConnection();
 
-        // If this voucher pays toward an existing debt, the debt's own
-        // creditor is authoritative - override whatever the payee
-        // fields say rather than trusting them to already agree. A
-        // debt always represents money the union owes, so it's always
-        // an Expense regardless of what the form's dropdown had.
-        if (!string.IsNullOrWhiteSpace(input.Debt_Link))
-        {
-            const string debtSql = @"
-                SELECT Creditor_Type, Official_link AS Official_Link, Supplier_link AS Supplier_Link
-                FROM Debt_Register WHERE Debt_ID = @DebtId;";
-
-            var debt = await conn.QuerySingleOrDefaultAsync(debtSql, new { DebtId = input.Debt_Link });
-
-            if (debt is not null)
-            {
-                input.Transaction_Type = "Expense";
-                input.Payee_Category = (string)debt.Creditor_Type;
-                input.Official_Link = debt.Official_Link;
-                input.Supplier_Link = debt.Supplier_Link;
-                input.Manual_Payee_Name = null;
-                // The debt's own creditor now has a reference-row
-                // address (Ref_Officials/Ref_Suppliers) instead - a
-                // one-time address typed against this voucher would be
-                // stale the next time the same debt is paid down.
-                input.Manual_Payee_Address = null;
-            }
-        }
+        await ApplyDebtOverrideAsync(conn, input);
 
         // Voucher_ID is server-generated (DEFAULT expression using
         // VoucherSeq), so OUTPUT INSERTED.Voucher_ID hands the new
@@ -317,12 +408,15 @@ public class VoucherService : IVoucherService
                    v.Payee_Category, v.Official_Link, v.Supplier_Link, v.Manual_Payee_Name, v.Manual_Payee_Address,
                    v.Budget_Link, v.Debt_link AS Debt_Link,
                    v.Is_Travel_Expense, v.Traveler_Name, v.Travel_From, v.Travel_To, v.Travel_Mode, v.Travel_Date, v.Travel_Reason,
-                   vas.ChairmanApproved, vas.ChapterSecretaryApproved
+                   vas.ChairmanApproved, vas.ChapterSecretaryApproved,
+                   CAST(CASE WHEN EXISTS (SELECT 1 FROM CashFloatReceipts r WHERE r.Voucher_ID = v.Voucher_ID)
+                        THEN 1 ELSE 0 END AS bit) AS IsFloatVoucher
             FROM Vouchers v
             INNER JOIN VoucherApprovalStatus vas ON vas.Voucher_ID = v.Voucher_ID
             LEFT JOIN Ref_Officials o ON o.OfficialID = v.Official_Link
             LEFT JOIN Ref_Suppliers s ON s.Supplier_ID = v.Supplier_Link
             WHERE v.Is_Legacy = 0
+              AND v.Voided_Date IS NULL
               AND vas.FullyApproved = 0
               AND NOT EXISTS (
                 SELECT 1 FROM Voucher_Approvals va
@@ -348,24 +442,7 @@ public class VoucherService : IVoucherService
         // Same debt-authoritative override as CreateVoucherAsync - if
         // this voucher was (or is being) linked to a debt, the debt's
         // creditor wins over whatever the form posted.
-        if (!string.IsNullOrWhiteSpace(input.Debt_Link))
-        {
-            const string debtSql = @"
-                SELECT Creditor_Type, Official_link AS Official_Link, Supplier_link AS Supplier_Link
-                FROM Debt_Register WHERE Debt_ID = @DebtId;";
-
-            var debt = await conn.QuerySingleOrDefaultAsync(debtSql, new { DebtId = input.Debt_Link });
-
-            if (debt is not null)
-            {
-                input.Transaction_Type = "Expense";
-                input.Payee_Category = (string)debt.Creditor_Type;
-                input.Official_Link = debt.Official_Link;
-                input.Supplier_Link = debt.Supplier_Link;
-                input.Manual_Payee_Name = null;
-                input.Manual_Payee_Address = null;
-            }
-        }
+        await ApplyDebtOverrideAsync(conn, input);
 
         // trg_Vouchers_BlockEditAfterApproval (SQL/020) rejects this
         // outright if any Voucher_Approvals row already exists for this
@@ -421,6 +498,7 @@ public class VoucherService : IVoucherService
             LEFT JOIN Ref_Suppliers s ON s.Supplier_ID = v.Supplier_Link
             LEFT JOIN Ref_BudgetCodes bc ON bc.Budget_ID = v.Budget_Link
             WHERE (v.Is_Legacy = 1 OR vas.FullyApproved = 1 OR v.Transaction_Type = 'Income')
+              AND v.Voided_Date IS NULL
               AND v.VoucherDate >= @Start AND v.VoucherDate < @End
             ORDER BY v.VoucherDate DESC;";
 

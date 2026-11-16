@@ -176,6 +176,7 @@ public class ActivityService : IActivityService
                    COALESCE(p.Voucher_ID, dv.Voucher_ID) AS Voucher_ID,
                    CASE
                        WHEN COALESCE(p.Voucher_ID, dv.Voucher_ID) IS NULL THEN NULL
+                       WHEN EXISTS (SELECT 1 FROM Vouchers vx WHERE vx.Voucher_ID = COALESCE(p.Voucher_ID, dv.Voucher_ID) AND vx.Voided_Date IS NOT NULL) THEN 'Voided'
                        WHEN EXISTS (SELECT 1 FROM Voucher_Approvals va WHERE va.Voucher_ID = COALESCE(p.Voucher_ID, dv.Voucher_ID) AND va.Approval_Status = 'Rejected') THEN 'Rejected'
                        WHEN EXISTS (SELECT 1 FROM PaymentAllocations pa WHERE pa.Voucher_ID = COALESCE(p.Voucher_ID, dv.Voucher_ID)) THEN 'Paid'
                        WHEN vas.FullyApproved = 1 THEN 'Approved'
@@ -189,6 +190,7 @@ public class ActivityService : IActivityService
                 SELECT TOP 1 vd.Voucher_ID
                 FROM VoucherDebts vd
                 WHERE vd.Debt_ID = p.Debt_ID
+                  AND NOT EXISTS (SELECT 1 FROM Vouchers vx WHERE vx.Voucher_ID = vd.Voucher_ID AND vx.Voided_Date IS NOT NULL)
                   AND NOT EXISTS (SELECT 1 FROM Voucher_Approvals va WHERE va.Voucher_ID = vd.Voucher_ID AND va.Approval_Status = 'Rejected')
                 ORDER BY vd.Voucher_ID DESC
             ) dv

@@ -60,7 +60,9 @@ public class DebtService : IDebtService
               -- spoken for; offering it here too would let it be paid twice.
               AND NOT EXISTS (
                     SELECT 1 FROM VoucherDebts vd
+                    INNER JOIN Vouchers vv ON vv.Voucher_ID = vd.Voucher_ID
                     WHERE vd.Debt_ID = ds.Debt_ID
+                      AND vv.Voided_Date IS NULL
                       AND NOT EXISTS (SELECT 1 FROM Voucher_Approvals va WHERE va.Voucher_ID = vd.Voucher_ID AND va.Approval_Status = 'Rejected'))
             ORDER BY ds.Date_Incurred;";
 

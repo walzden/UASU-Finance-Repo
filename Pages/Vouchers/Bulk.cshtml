@@ -9,7 +9,7 @@
     <div class="alert @(Model.StatusIsError ? "alert-danger" : "alert-success")">@Model.StatusMessage</div>
 }
 
-<form method="post" id="bulkForm" style="max-width: 900px;">
+<form method="post" id="bulkForm" style="max-width: 900px;" data-submit-once>
     <div asp-validation-summary="ModelOnly" class="text-danger"></div>
 
     <div class="row g-3 mb-3">

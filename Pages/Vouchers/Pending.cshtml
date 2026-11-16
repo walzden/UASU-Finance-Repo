@@ -32,6 +32,14 @@
     <div class="alert @(Model.StatusIsError ? "alert-danger" : "alert-success") d-print-none">@Model.StatusMessage</div>
 }
 
+@* Same reason as Vouchers/Create: validation errors otherwise vanish silently. *@
+@if (!ViewData.ModelState.IsValid)
+{
+    <div class="alert alert-danger d-print-none">
+        <div asp-validation-summary="All" class="mb-0"></div>
+    </div>
+}
+
 @if (Model.Vouchers.Any())
 {
     <div class="mb-3 d-print-none">
@@ -58,7 +66,7 @@ else
                 <th>Budget line</th>
                 <th>Description</th>
                 <th>Approval status</th>
-                <th class="d-print-none" style="width:110px;">Action</th>
+                <th class="d-print-none" style="width:140px;">Action</th>
             </tr>
         </thead>
         <tbody>
@@ -82,15 +90,24 @@ else
                         @if (v.ChapterSecretaryApproved) { <span class="badge bg-success">Chapter Sec. approved</span> }
                         @if (v.CanEdit) { <span class="text-muted">None yet</span> }
                     </td>
-                    <td class="d-print-none">
+                    <td class="d-print-none text-nowrap" onclick="event.stopPropagation()">
                         @if (v.CanEdit)
                         {
-                            <button class="btn btn-outline-primary btn-sm" type="button" onclick="event.stopPropagation(); toggleEdit('@rowId')">Edit</button>
+                            <button class="btn btn-outline-primary btn-sm" type="button" onclick="toggleEdit('@rowId')">Edit</button>
                         }
                         else
                         {
                             <button class="btn btn-outline-secondary btn-sm" type="button" disabled
                                     title="Already has an approval on file - ask the approver to reject it first if it needs correction">Locked</button>
+                        }
+                        @if (!v.IsFloatVoucher)
+                        {
+                            <form method="post" asp-page-handler="Void" class="d-inline void-form" data-submit-once>
+                                <input type="hidden" name="voucherId" value="@v.Voucher_ID" />
+                                <input type="hidden" name="reason" value="" />
+                                <button type="submit" class="btn btn-outline-danger btn-sm"
+                                        title="Void this voucher (e.g. a duplicate) - it keeps its number but can never be approved or paid">Void</button>
+                            </form>
                         }
                     </td>
                 </tr>
@@ -100,7 +117,7 @@ else
                         <td></td>
                         <td></td>
                         <td colspan="8" class="p-0">
-                            <form method="post" class="edit-panel p-3 border-top">
+                            <form method="post" class="edit-panel p-3 border-top" data-submit-once>
                                 <input type="hidden" name="VoucherId" value="@v.Voucher_ID" />
                                 <input type="hidden" name="Input.Debt_Link" value="@v.Debt_Link" />
                                 <input type="hidden" name="Input.Supersedes_Voucher_ID" value="" />
@@ -294,5 +311,15 @@ else
         if (payeeSelect) { togglePayeeFields(payeeSelect); }
         var travelCheckbox = panel.querySelector('.travel-checkbox');
         if (travelCheckbox) { toggleTravelFields(travelCheckbox); }
+    });
+
+    // Voiding needs a reason, asked for at the moment of clicking.
+    document.querySelectorAll('.void-form').forEach(function (form) {
+        form.addEventListener('submit', function (e) {
+            var id = form.querySelector('[name="voucherId"]').value;
+            var reason = prompt('Void voucher ' + id + '?\n\nIt keeps its number but can never be approved or paid. This cannot be undone.\n\nReason (e.g. "Duplicate of UASU-MMU-0245/26"):');
+            if (!reason || !reason.trim()) { e.preventDefault(); return; }
+            form.querySelector('[name="reason"]').value = reason.trim();
+        });
     });
 </script>

@@ -142,7 +142,25 @@ public class PendingVoucherRow
     public bool ChairmanApproved { get; set; }
     public bool ChapterSecretaryApproved { get; set; }
 
+    // Retires cash float receipts - corrected by rejection (which releases
+    // the receipts), never voided; SQL/033 refuses it either way.
+    public bool IsFloatVoucher { get; set; }
+
     public bool CanEdit => !ChairmanApproved && !ChapterSecretaryApproved;
+}
+
+// A live (not rejected, not voided) voucher that looks like the one being
+// created - same payee and type, and the same amount within 30 days or
+// the same description. Shown on New Voucher as a "possible duplicate"
+// warning the Treasurer must confirm past.
+public class PossibleDuplicateRow
+{
+    public string Voucher_ID { get; set; } = string.Empty;
+    public DateTime VoucherDate { get; set; }
+    public decimal Amount { get; set; }
+    public string? Description { get; set; }
+    public string PayeeDisplay { get; set; } = string.Empty;
+    public string Status { get; set; } = string.Empty;
 }
 
 // One voucher that has cleared approval (or is Is_Legacy, pre-dating
