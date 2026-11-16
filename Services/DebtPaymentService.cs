@@ -51,11 +51,14 @@ public class DebtPaymentService : IDebtPaymentService
           AND ds.SettlementStatus <> 'Settled'
           AND NOT EXISTS (
                 SELECT 1 FROM VoucherDebts vd
+                INNER JOIN Vouchers vv ON vv.Voucher_ID = vd.Voucher_ID
                 WHERE vd.Debt_ID = ds.Debt_ID
+                  AND vv.Voided_Date IS NULL
                   AND NOT EXISTS (SELECT 1 FROM Voucher_Approvals va WHERE va.Voucher_ID = vd.Voucher_ID AND va.Approval_Status = 'Rejected'))
           AND NOT EXISTS (
                 SELECT 1 FROM Vouchers v
                 WHERE v.Debt_Link = ds.Debt_ID
+                  AND v.Voided_Date IS NULL
                   AND NOT EXISTS (SELECT 1 FROM Voucher_Approvals va WHERE va.Voucher_ID = v.Voucher_ID AND va.Approval_Status = 'Rejected'))
         ORDER BY o.FullName, ds.Date_Incurred, ds.Debt_ID;";
 

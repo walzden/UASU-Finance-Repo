@@ -1,6 +1,8 @@
 @page
 @model UASU_VoucherApprovals.Pages.Vouchers.CreateModel
 
+<div style="max-width: 820px;">
+
 <h3 class="mb-3">New Voucher</h3>
 
 @if (!string.IsNullOrEmpty(Model.StatusMessage))
@@ -8,12 +10,23 @@
     <div class="alert @(Model.StatusIsError ? "alert-danger" : "alert-success")">@Model.StatusMessage</div>
 }
 
+@* Server-side checks in VoucherFormValidation key their errors by bare
+   field name (e.g. "Manual_Payee_Address"), so no asp-validation-for span
+   ever matches them - without this summary a rejected submission just
+   re-renders the form and looks like the button did nothing. *@
+@if (!ViewData.ModelState.IsValid)
+{
+    <div class="alert alert-danger">
+        <div asp-validation-summary="All" class="mb-0"></div>
+    </div>
+}
+
 @if (Model.RejectedVouchers.Any())
 {
-    <div class="card mb-4" style="max-width: 800px;">
+    <div class="card mb-4">
         <div class="card-header">Rejected Vouchers Awaiting Correction</div>
         <div class="card-body p-0">
-            <table class="table table-sm mb-0">
+            <table class="table table-sm align-middle mb-0">
                 <thead>
                     <tr>
                         <th>Voucher</th>
@@ -22,9 +35,11 @@
                         <th class="text-end">Amount</th>
                         <th>Rejected By</th>
                         <th>Reason</th>
+                        <th></th>
                     </tr>
                 </thead>
                 <tbody>
+                    @{ var voidOffered = new HashSet<string>(); }
                     @foreach (var r in Model.RejectedVouchers)
                     {
                         <tr>
@@ -34,213 +49,298 @@
                             <td class="text-end">@r.Amount.ToString("N2")</td>
                             <td>@r.RejectedByRole</td>
                             <td>@r.RejectionReason</td>
+                            <td class="text-end">
+                                @* One Void button per voucher, even if both approvers rejected it. *@
+                                @if (voidOffered.Add(r.Voucher_ID))
+                                {
+                                    <form method="post" asp-page-handler="Void" class="d-inline void-form" data-submit-once>
+                                        <input type="hidden" name="voucherId" value="@r.Voucher_ID" />
+                                        <input type="hidden" name="reason" value="" />
+                                        <button type="submit" class="btn btn-outline-danger btn-sm"
+                                                title="Void this voucher if it will never be resubmitted, e.g. a duplicate">Void</button>
+                                    </form>
+                                }
+                            </td>
                         </tr>
                     }
                 </tbody>
             </table>
         </div>
+        <div class="card-footer form-text">
+            Correct a voucher by creating a new one below and linking it. <strong>Void</strong> one that should never be
+            paid (e.g. a duplicate): it keeps its number but drops off this list for good.
+        </div>
     </div>
 }
 
-<form method="post" asp-page="/Vouchers/Create" class="row g-3" style="max-width: 640px;">
-    <div class="col-md-6">
-        <label class="form-label">Voucher Date</label>
-        <input asp-for="Input.VoucherDate" type="date" class="form-control" />
-        <div class="form-text">Defaults to today - backdate this to reflect when the income (or expense) actually happened, e.g. money received into the account earlier but only being recorded now.</div>
-    </div>
+<form method="post" asp-page="/Vouchers/Create" id="voucherForm" data-submit-once>
 
-    <div class="col-12">
-        <label class="form-label">This Corrects a Previously Rejected Voucher (optional)</label>
-        <select asp-for="Input.Supersedes_Voucher_ID" class="form-select">
-            <option value="">-- not a correction --</option>
-            @foreach (var r in Model.RejectedVouchers.DistinctBy(r => r.Voucher_ID))
-            {
-                <option value="@r.Voucher_ID">@r.Voucher_ID - Sh. @r.Amount.ToString("N2") - @r.PayeeDisplay</option>
-            }
-        </select>
-        <div class="form-text">Links this new voucher to the rejected one for traceability - it does not fill in any fields below, since the point is to enter the corrected data.</div>
-    </div>
-
-    <div class="col-12">
-        <label class="form-label">Pay Toward an Existing Debt (optional)</label>
-        <select asp-for="Input.Debt_Link" class="form-select" onchange="toggleDebtMode(this.value); prefillDescription(this);">
-            <option value="">-- not a debt payment --</option>
-            @foreach (var d in Model.OutstandingDebts)
-            {
-                <option value="@d.Id" data-description="@d.Description">@d.Label</option>
-            }
-        </select>
-        <div class="form-text">Selecting a debt fills in the payee automatically and sets this as an Expense.</div>
-    </div>
-
-    <div class="col-md-6" id="transactionTypeField">
-        <label class="form-label">Transaction Type</label>
-        <select asp-for="Input.Transaction_Type" class="form-select" onchange="toggleIncomePaymentFields(this.value)">
-            <option value="Expense">Expense</option>
-            <option value="Income">Income</option>
-        </select>
-        <div class="form-text">Income skips Chairman/Chapter Secretary approval and is treated as approved immediately - most income is a deposit, M-Pesa, or cash payment that's already landed by the time it's recorded.</div>
-    </div>
-
-    <div class="col-md-6">
-        <label class="form-label">Budget Category</label>
-        <select asp-for="Input.Budget_Link" class="form-select">
-            @foreach (var b in Model.BudgetCodes)
-            {
-                <option value="@b.Id">@b.Label</option>
-            }
-        </select>
-    </div>
-
-    <div class="col-md-6" id="payeeCategoryField">
-        <label class="form-label">Payee Category</label>
-        <select asp-for="Input.Payee_Category" class="form-select" onchange="togglePayeeFields(this.value)">
-            <option value="One-Time">One-Time</option>
-            <option value="Official">Official</option>
-            <option value="Supplier">Supplier</option>
-            <option value="Donor">Donor</option>
-            <option value="Income Source">Income Source</option>
-        </select>
-    </div>
-
-    <div class="col-md-6">
-        <label class="form-label">Amount (Sh.)</label>
-        <input asp-for="Input.Amount" type="number" step="0.01" class="form-control" />
-    </div>
-
-    <div class="col-md-6 payee-field" id="officialField">
-        <label class="form-label">Official (if Payee = Official)</label>
-        <select asp-for="Input.Official_Link" class="form-select" onchange="prefillTraveler(this)">
-            <option value="">-- none --</option>
-            @foreach (var o in Model.Officials)
-            {
-                <option value="@o.Id" data-fullname="@o.FullName">@o.Label</option>
-            }
-        </select>
-    </div>
-
-    <div class="col-md-6 payee-field" id="supplierField">
-        <label class="form-label">Supplier (if Payee = Supplier)</label>
-        <select asp-for="Input.Supplier_Link" class="form-select">
-            <option value="">-- none --</option>
-            @foreach (var s in Model.Suppliers)
-            {
-                <option value="@s.Id">@s.Label</option>
-            }
-        </select>
-    </div>
-
-    <div class="col-md-6 payee-field" id="manualPayeeField">
-        <label class="form-label">Payee name (if One-Time / Donor / Income Source)</label>
-        <input asp-for="Input.Manual_Payee_Name" class="form-control" />
-    </div>
-
-    <div class="col-md-6 payee-field" id="manualPayeeAddressField">
-        <label class="form-label">Payee address</label>
-        <input asp-for="Input.Manual_Payee_Address" class="form-control" />
-        <div class="form-text">Required for expense payments (Labour Relations (Accounts) Regulations, reg. 6(1)(e)).</div>
-    </div>
-
-    <div class="col-12">
-        <label class="form-label">Description</label>
-        <textarea asp-for="Input.Description" class="form-control" rows="2"></textarea>
-        <span asp-validation-for="Input.Description" class="text-danger"></span>
-        <div class="form-text">Prefilled from the debt's own description when paying toward a debt - edit if this particular voucher needs something more specific (e.g. "installment 2 of 3").</div>
-    </div>
-
-    <div id="incomePaymentSection" class="col-12 row g-3">
-        <div class="col-12 form-check">
-            <input asp-for="Input.Mark_As_Received" type="checkbox" class="form-check-input" onchange="toggleReceivedFields(this.checked)" />
-            <label asp-for="Input.Mark_As_Received" class="form-check-label">Received in full now - record the matching payment automatically</label>
-            <div class="form-text">Ticked by default since most income is already in the account, M-Pesa, or cash by the time it's recorded. Untick this if the income is still outstanding - it'll then show up on Record Payment to be marked received later, same as any other voucher.</div>
+    @if (Model.PossibleDuplicates.Any())
+    {
+        <div class="alert alert-warning" id="duplicateWarning">
+            <h6 class="alert-heading mb-2">Possible duplicate &mdash; nothing has been saved yet</h6>
+            <p class="mb-2">These existing vouchers have the same payee and either the same amount within 30 days or the same description:</p>
+            <table class="table table-sm table-borderless mb-2">
+                <thead>
+                    <tr><th>Voucher</th><th>Date</th><th>Payee</th><th class="text-end">Amount</th><th>Description</th><th>Status</th></tr>
+                </thead>
+                <tbody>
+                    @foreach (var d in Model.PossibleDuplicates)
+                    {
+                        <tr>
+                            <td class="text-nowrap">@d.Voucher_ID</td>
+                            <td class="text-nowrap">@d.VoucherDate.ToString("yyyy-MM-dd")</td>
+                            <td>@d.PayeeDisplay</td>
+                            <td class="text-end">@d.Amount.ToString("N2")</td>
+                            <td>@d.Description</td>
+                            <td>@d.Status</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+            <div class="form-check">
+                <input class="form-check-input" type="checkbox" name="ConfirmNotDuplicate" value="true" id="confirmNotDuplicate" />
+                <label class="form-check-label fw-semibold" for="confirmNotDuplicate">
+                    I've checked &mdash; this is a separate payment, create it anyway
+                </label>
+            </div>
+            <div class="form-text">If it <em>is</em> the same payment, leave this unticked and don't create it.</div>
         </div>
+    }
 
-        <div id="receivedFields" class="col-12 row g-3">
-            <div class="col-md-4">
-                <label class="form-label">Payment Mode</label>
-                <select asp-for="Input.Payment_Mode" class="form-select">
-                    <option value="">-- select --</option>
-                    <option value="M-PESA">M-PESA</option>
-                    <option value="Cheque">Cheque</option>
-                    <option value="Cash">Cash</option>
-                    <option value="Bank Transfer">Bank Transfer</option>
+    @* ------------------------------------------------------------ Links *@
+    <div class="card mb-3">
+        <div class="card-header fw-semibold">Links <span class="fw-normal text-muted small">(optional)</span></div>
+        <div class="card-body row g-3">
+            <div class="col-md-6">
+                <label asp-for="Input.Debt_Link" class="form-label">Pay toward an existing debt</label>
+                <select asp-for="Input.Debt_Link" class="form-select" onchange="toggleDebtMode(this.value); prefillDescription(this);">
+                    <option value="">-- not a debt payment --</option>
+                    @foreach (var d in Model.OutstandingDebts)
+                    {
+                        <option value="@d.Id" data-description="@d.Description">@d.Label</option>
+                    }
+                </select>
+                <div class="form-text">Fills in the payee from the debt and makes this an Expense.</div>
+            </div>
+            <div class="col-md-6">
+                <label asp-for="Input.Supersedes_Voucher_ID" class="form-label">Corrects a rejected voucher</label>
+                <select asp-for="Input.Supersedes_Voucher_ID" class="form-select">
+                    <option value="">-- not a correction --</option>
+                    @foreach (var r in Model.RejectedVouchers.DistinctBy(r => r.Voucher_ID))
+                    {
+                        <option value="@r.Voucher_ID">@r.Voucher_ID - Sh. @r.Amount.ToString("N2") - @r.PayeeDisplay</option>
+                    }
+                </select>
+                <div class="form-text">Links the two for traceability; it doesn't copy any details.</div>
+            </div>
+        </div>
+    </div>
+
+    @* ---------------------------------------------------------- Details *@
+    <div class="card mb-3">
+        <div class="card-header fw-semibold">Voucher details</div>
+        <div class="card-body row g-3">
+            <div class="col-md">
+                <label asp-for="Input.VoucherDate" class="form-label">Voucher date</label>
+                <input asp-for="Input.VoucherDate" type="date" class="form-control" />
+            </div>
+            <div class="col-md" id="transactionTypeField">
+                <label asp-for="Input.Transaction_Type" class="form-label">Transaction type</label>
+                <select asp-for="Input.Transaction_Type" class="form-select" onchange="toggleIncomePaymentFields(this.value)">
+                    <option value="Expense">Expense</option>
+                    <option value="Income">Income</option>
                 </select>
             </div>
-            <div class="col-md-4">
-                <label class="form-label">Reference No. (optional)</label>
-                <input asp-for="Input.Payment_Reference_No" class="form-control" />
+            <div class="col-md">
+                <label asp-for="Input.Amount" class="form-label">Amount (Sh.)</label>
+                <input asp-for="Input.Amount" type="number" step="0.01" min="0.01" class="form-control text-end" />
+            </div>
+            <div class="col-12 form-text mt-1">
+                Backdate the voucher date to when the money actually moved, if it's being recorded late.
+                <span id="incomeApprovalNote">Income skips Chairman/Chapter Secretary approval and counts as approved immediately.</span>
+            </div>
+
+            <div class="col-12">
+                <label asp-for="Input.Budget_Link" class="form-label">Budget category</label>
+                <select asp-for="Input.Budget_Link" class="form-select">
+                    @foreach (var b in Model.BudgetCodes)
+                    {
+                        <option value="@b.Id">@b.Label</option>
+                    }
+                </select>
+            </div>
+
+            <div class="col-12">
+                <label asp-for="Input.Description" class="form-label">Description</label>
+                <textarea asp-for="Input.Description" class="form-control" rows="2"></textarea>
+                <div class="form-text">When paying a debt this starts as the debt's own description &mdash; edit it if needed (e.g. "installment 2 of 3").</div>
+            </div>
+        </div>
+    </div>
+
+    @* ------------------------------------------------------------ Payee *@
+    <div class="card mb-3">
+        <div class="card-header fw-semibold">Payee</div>
+        <div class="card-body">
+            <p class="mb-0 text-muted" id="debtPayeeNote" style="display:none;">The payee is taken from the selected debt.</p>
+
+            <div class="row g-3" id="payeeFields">
+                <div class="col-md-4">
+                    <label asp-for="Input.Payee_Category" class="form-label">Category</label>
+                    <select asp-for="Input.Payee_Category" class="form-select" onchange="togglePayeeFields(this.value)">
+                        <option value="One-Time">One-Time</option>
+                        <option value="Official">Official</option>
+                        <option value="Supplier">Supplier</option>
+                        <option value="Donor">Donor</option>
+                        <option value="Income Source">Income Source</option>
+                    </select>
+                </div>
+
+                <div class="col-md-8" id="officialField">
+                    <label asp-for="Input.Official_Link" class="form-label">Official</label>
+                    <select asp-for="Input.Official_Link" class="form-select" onchange="prefillTraveler(this)">
+                        <option value="">-- select --</option>
+                        @foreach (var o in Model.Officials)
+                        {
+                            <option value="@o.Id" data-fullname="@o.FullName">@o.Label</option>
+                        }
+                    </select>
+                </div>
+
+                <div class="col-md-8" id="supplierField">
+                    <label asp-for="Input.Supplier_Link" class="form-label">Supplier</label>
+                    <select asp-for="Input.Supplier_Link" class="form-select">
+                        <option value="">-- select --</option>
+                        @foreach (var s in Model.Suppliers)
+                        {
+                            <option value="@s.Id">@s.Label</option>
+                        }
+                    </select>
+                </div>
+
+                <div class="col-md-8" id="manualPayeeField">
+                    <label asp-for="Input.Manual_Payee_Name" class="form-label">Name</label>
+                    <input asp-for="Input.Manual_Payee_Name" class="form-control" />
+                </div>
+
+                <div class="col-12" id="manualPayeeAddressField">
+                    <label asp-for="Input.Manual_Payee_Address" class="form-label">Address</label>
+                    <input asp-for="Input.Manual_Payee_Address" class="form-control" />
+                    <div class="form-text">Required on expense payments (Labour Relations (Accounts) Regulations, reg. 6(1)(e)).</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    @* ----------------------------------------------- Income received now *@
+    <div class="card mb-3" id="incomePaymentSection">
+        <div class="card-header fw-semibold">Income received</div>
+        <div class="card-body">
+            <div class="form-check mb-1">
+                <input asp-for="Input.Mark_As_Received" type="checkbox" class="form-check-input" onchange="toggleReceivedFields(this.checked)" />
+                <label asp-for="Input.Mark_As_Received" class="form-check-label">Received in full now &mdash; record the matching payment automatically</label>
+            </div>
+            <div class="form-text mb-3">Untick if the income is still outstanding; it will then appear on Record Payment to be marked received later.</div>
+
+            <div class="row g-3" id="receivedFields">
+                <div class="col-md-4">
+                    <label asp-for="Input.Payment_Mode" class="form-label">Payment mode</label>
+                    <select asp-for="Input.Payment_Mode" class="form-select">
+                        <option value="">-- select --</option>
+                        <option value="M-PESA">M-PESA</option>
+                        <option value="Cheque">Cheque</option>
+                        <option value="Cash">Cash</option>
+                        <option value="Bank Transfer">Bank Transfer</option>
+                    </select>
+                </div>
+                <div class="col-md-4">
+                    <label asp-for="Input.Payment_Reference_No" class="form-label">Reference no. <span class="text-muted small">(optional)</span></label>
+                    <input asp-for="Input.Payment_Reference_No" class="form-control" />
+                </div>
+                <div class="col-md-4">
+                    <label asp-for="Input.Payment_Bank_Account" class="form-label">Bank account <span class="text-muted small">(optional)</span></label>
+                    <input asp-for="Input.Payment_Bank_Account" class="form-control" />
+                </div>
+            </div>
+        </div>
+    </div>
+
+    @* ----------------------------------------------------------- Travel *@
+    <div class="card mb-3">
+        <div class="card-header fw-semibold">
+            <div class="form-check mb-0">
+                <input asp-for="Input.Is_Travel_Expense" type="checkbox" class="form-check-input" onchange="toggleTravelFields(this.checked)" />
+                <label asp-for="Input.Is_Travel_Expense" class="form-check-label">This payment is for travelling expenses</label>
+            </div>
+        </div>
+        <div class="card-body row g-3" id="travelFields">
+            <div class="col-md-6">
+                <label asp-for="Input.Traveler_Name" class="form-label">Traveller's name</label>
+                <input asp-for="Input.Traveler_Name" class="form-control" />
+            </div>
+            <div class="col-md-6">
+                <label asp-for="Input.Travel_Date" class="form-label">Date of travel</label>
+                <input asp-for="Input.Travel_Date" type="date" class="form-control" />
             </div>
             <div class="col-md-4">
-                <label class="form-label">Bank Account (optional)</label>
-                <input asp-for="Input.Payment_Bank_Account" class="form-control" />
+                <label asp-for="Input.Travel_From" class="form-label">From</label>
+                <input asp-for="Input.Travel_From" class="form-control" />
+            </div>
+            <div class="col-md-4">
+                <label asp-for="Input.Travel_To" class="form-label">To</label>
+                <input asp-for="Input.Travel_To" class="form-control" />
+            </div>
+            <div class="col-md-4">
+                <label asp-for="Input.Travel_Mode" class="form-label">Mode of transport</label>
+                <input asp-for="Input.Travel_Mode" class="form-control" />
+            </div>
+            <div class="col-12">
+                <label asp-for="Input.Travel_Reason" class="form-label">Reason for journey</label>
+                <input asp-for="Input.Travel_Reason" class="form-control" />
+                <div class="form-text">The traveller's name is prefilled when the payee is an Official &mdash; change it if someone else travelled.</div>
             </div>
         </div>
     </div>
 
-    <div class="col-12 form-check">
-        <input asp-for="Input.Is_Travel_Expense" type="checkbox" class="form-check-input" onchange="toggleTravelFields(this.checked)" />
-        <label asp-for="Input.Is_Travel_Expense" class="form-check-label">This payment is for travelling expenses</label>
-    </div>
-
-    <div id="travelFields" class="col-12 row g-3">
-        <div class="col-md-6">
-            <label class="form-label">Traveller's Name</label>
-            <input asp-for="Input.Traveler_Name" class="form-control" />
-            <div class="form-text">Prefilled when the payee is an Official - edit if someone else travelled.</div>
-        </div>
-        <div class="col-md-6">
-            <label class="form-label">Date of Travel</label>
-            <input asp-for="Input.Travel_Date" type="date" class="form-control" />
-        </div>
-        <div class="col-md-6">
-            <label class="form-label">Travelled From</label>
-            <input asp-for="Input.Travel_From" class="form-control" />
-        </div>
-        <div class="col-md-6">
-            <label class="form-label">Travelled To</label>
-            <input asp-for="Input.Travel_To" class="form-control" />
-        </div>
-        <div class="col-md-6">
-            <label class="form-label">Mode of Transport</label>
-            <input asp-for="Input.Travel_Mode" class="form-control" />
-        </div>
-        <div class="col-12">
-            <label class="form-label">Reason for Journey</label>
-            <input asp-for="Input.Travel_Reason" class="form-control" />
-        </div>
-    </div>
-
-    <div class="col-12">
+    <div class="mb-5">
         <button type="submit" class="btn btn-primary">Create Voucher</button>
     </div>
 </form>
+
+</div>
 
 <script>
     // Purely a UX nicety - the server re-validates Payee_Category against
     // the matching field regardless of what the client sends, and
     // VoucherService overrides all of this anyway when Debt_Link is set.
+    function show(id, visible) {
+        document.getElementById(id).style.display = visible ? '' : 'none';
+    }
+
     function togglePayeeFields(category) {
         var isManual = category !== 'Official' && category !== 'Supplier';
-        document.getElementById('officialField').style.display = category === 'Official' ? '' : 'none';
-        document.getElementById('supplierField').style.display = category === 'Supplier' ? '' : 'none';
-        document.getElementById('manualPayeeField').style.display = isManual ? '' : 'none';
-        document.getElementById('manualPayeeAddressField').style.display = isManual ? '' : 'none';
+        show('officialField', category === 'Official');
+        show('supplierField', category === 'Supplier');
+        show('manualPayeeField', isManual);
+        show('manualPayeeAddressField', isManual);
     }
 
     function toggleTravelFields(isTravel) {
-        document.getElementById('travelFields').style.display = isTravel ? '' : 'none';
+        show('travelFields', isTravel);
     }
 
     function toggleIncomePaymentFields(transactionType) {
         var isIncome = transactionType === 'Income';
-        document.getElementById('incomePaymentSection').style.display = isIncome ? '' : 'none';
+        show('incomePaymentSection', isIncome);
+        show('incomeApprovalNote', isIncome);
         if (isIncome) {
             toggleReceivedFields(document.querySelector('[name="Input.Mark_As_Received"][type="checkbox"]').checked);
         }
     }
 
     function toggleReceivedFields(isReceived) {
-        document.getElementById('receivedFields').style.display = isReceived ? '' : 'none';
+        show('receivedFields', isReceived);
     }
 
     // The traveller usually is the official being paid, but Traveler_Name
@@ -272,24 +372,36 @@
         // Payee and transaction type are derived from the debt server-side
         // when one is selected, so hide the now-irrelevant fields rather
         // than leave a confusing set of inputs the form will ignore.
-        document.getElementById('payeeCategoryField').style.display = isDebtPayment ? 'none' : '';
-        document.getElementById('transactionTypeField').style.display = isDebtPayment ? 'none' : '';
-        document.querySelectorAll('.payee-field').forEach(function (el) {
-            el.style.display = isDebtPayment ? 'none' : '';
-        });
+        show('transactionTypeField', !isDebtPayment);
+        show('payeeFields', !isDebtPayment);
+        show('debtPayeeNote', isDebtPayment);
         // A debt payment is always an Expense server-side (CreateVoucherAsync
         // overrides Transaction_Type regardless of what's selected here) -
-        // so the Income-only payment section never applies while a debt is
-        // chosen, no matter what the hidden dropdown's value still says.
+        // so the Income-only section never applies while a debt is chosen,
+        // no matter what the hidden dropdown's value still says.
         if (isDebtPayment) {
-            document.getElementById('incomePaymentSection').style.display = 'none';
+            show('incomePaymentSection', false);
+            show('incomeApprovalNote', false);
         } else {
             togglePayeeFields(document.querySelector('[name="Input.Payee_Category"]').value);
             toggleIncomePaymentFields(document.querySelector('[name="Input.Transaction_Type"]').value);
         }
     }
 
+    // Voiding needs a reason, asked for at the moment of clicking.
+    document.querySelectorAll('.void-form').forEach(function (form) {
+        form.addEventListener('submit', function (e) {
+            var id = form.querySelector('[name="voucherId"]').value;
+            var reason = prompt('Void voucher ' + id + '?\n\nIt keeps its number but can never be approved or paid. This cannot be undone.\n\nReason (e.g. "Duplicate of UASU-MMU-0245/26"):');
+            if (!reason || !reason.trim()) { e.preventDefault(); return; }
+            form.querySelector('[name="reason"]').value = reason.trim();
+        });
+    });
+
     togglePayeeFields(document.querySelector('[name="Input.Payee_Category"]').value);
     toggleDebtMode(document.querySelector('[name="Input.Debt_Link"]').value);
     toggleTravelFields(document.querySelector('[name="Input.Is_Travel_Expense"]').checked);
+
+    var dup = document.getElementById('duplicateWarning');
+    if (dup) dup.scrollIntoView({ block: 'start' });
 </script>

@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
@@ -44,6 +45,7 @@ public class PendingModel : PageModel
 
     public async Task OnGetAsync()
     {
+        StatusMessage = TempData[VoidedMessageKey] as string;
         await LoadAsync();
     }
 
@@ -86,6 +88,42 @@ public class PendingModel : PageModel
             StatusMessage = ex.Message;
         }
 
+        return Page();
+    }
+
+    private const string VoidedMessageKey = "VoucherVoidedMessage";
+
+    private string CurrentOfficialId => User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+
+    // Void a voucher that should never be paid - most often one raised
+    // twice by mistake. It keeps its number (no gap in the sequence) but
+    // SQL/033 makes it final: never approved, edited or paid. Redirects
+    // afterwards so a Refresh can't re-send it.
+    public async Task<IActionResult> OnPostVoidAsync(string voucherId, string? reason)
+    {
+        if (string.IsNullOrWhiteSpace(reason))
+        {
+            StatusIsError = true;
+            StatusMessage = "Give a reason for voiding the voucher.";
+        }
+        else
+        {
+            try
+            {
+                await _voucherService.VoidVoucherAsync(voucherId, CurrentOfficialId, reason);
+                TempData[VoidedMessageKey] = $"Voucher {voucherId} voided.";
+                return RedirectToPage();
+            }
+            catch (Exception ex) when (ex is SqlException or InvalidOperationException)
+            {
+                StatusIsError = true;
+                StatusMessage = ex.Message;
+            }
+        }
+
+        ModelState.Clear();
+        Input = new VoucherInputModel();
+        await LoadAsync();
         return Page();
     }
 

@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
@@ -11,6 +12,8 @@ namespace UASU_VoucherApprovals.Pages.Vouchers;
 [Authorize(Policy = "TreasuryAdmin")] // Treasurer/Deputy Treasurer only - approval is the separate gate for Chairman/Chapter Secretary
 public class CreateModel : PageModel
 {
+    private const string CreatedMessageKey = "VoucherCreatedMessage";
+
     private readonly IVoucherService _voucherService;
     private readonly IDebtService _debtService;
 
@@ -23,17 +26,29 @@ public class CreateModel : PageModel
     [BindProperty]
     public VoucherInputModel Input { get; set; } = new();
 
+    // Ticked by the Treasurer after reviewing the possible-duplicate
+    // warning. Deliberately not part of VoucherInputModel and never
+    // pre-ticked when the page re-renders, so each warning needs its own
+    // conscious confirmation.
+    [BindProperty]
+    public bool ConfirmNotDuplicate { get; set; }
+
     public IEnumerable<SimpleOption> BudgetCodes { get; set; } = Enumerable.Empty<SimpleOption>();
     public IEnumerable<OfficialOption> Officials { get; set; } = Enumerable.Empty<OfficialOption>();
     public IEnumerable<SimpleOption> Suppliers { get; set; } = Enumerable.Empty<SimpleOption>();
     public IEnumerable<DebtOption> OutstandingDebts { get; set; } = Enumerable.Empty<DebtOption>();
     public IEnumerable<RejectedVoucherRow> RejectedVouchers { get; set; } = Enumerable.Empty<RejectedVoucherRow>();
+    public IReadOnlyList<PossibleDuplicateRow> PossibleDuplicates { get; set; } = Array.Empty<PossibleDuplicateRow>();
 
     public string? StatusMessage { get; set; }
     public bool StatusIsError { get; set; }
 
+    private string CurrentOfficialId => User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+
     public async Task OnGetAsync()
     {
+        // Set by OnPostAsync just before it redirects here after a save.
+        StatusMessage = TempData[CreatedMessageKey] as string;
         await LoadDropdownsAsync();
     }
 
@@ -64,17 +79,23 @@ public class CreateModel : PageModel
 
         try
         {
-            var voucherId = await _voucherService.CreateVoucherAsync(Input);
-            StatusMessage = $"Voucher {voucherId} created.";
-            Input = new VoucherInputModel();
+            // Same payee and amount within 30 days, or the same
+            // description - stop and show them unless the Treasurer has
+            // already looked and confirmed this is a separate payment.
+            if (!ConfirmNotDuplicate)
+            {
+                PossibleDuplicates = await _voucherService.FindPossibleDuplicatesAsync(Input);
+                if (PossibleDuplicates.Count > 0)
+                    return Page();
+            }
 
-            // Resetting Input alone isn't enough - the asp-for tag helpers
-            // read from ModelState first (so a validation error can show
-            // back what was typed), and model binding already populated
-            // it with the just-submitted values. Without this, the form
-            // would still display the old voucher's details, inviting an
-            // accidental duplicate submission.
-            ModelState.Clear();
+            var voucherId = await _voucherService.CreateVoucherAsync(Input);
+
+            // Post/Redirect/Get: the browser ends up on a plain GET of a
+            // blank form, so pressing Refresh (or Back then Forward)
+            // can't resubmit this voucher a second time.
+            TempData[CreatedMessageKey] = $"Voucher {voucherId} created.";
+            return RedirectToPage();
         }
         catch (SqlException ex)
         {
@@ -82,6 +103,37 @@ public class CreateModel : PageModel
             StatusMessage = ex.Message;
         }
 
+        return Page();
+    }
+
+    // Void a rejected voucher that should never be resubmitted (most often
+    // a duplicate) so it stops showing as "awaiting correction".
+    public async Task<IActionResult> OnPostVoidAsync(string voucherId, string? reason)
+    {
+        if (string.IsNullOrWhiteSpace(reason))
+        {
+            StatusIsError = true;
+            StatusMessage = "Give a reason for voiding the voucher.";
+        }
+        else
+        {
+            try
+            {
+                await _voucherService.VoidVoucherAsync(voucherId, CurrentOfficialId, reason);
+                TempData[CreatedMessageKey] = $"Voucher {voucherId} voided.";
+                return RedirectToPage();
+            }
+            catch (Exception ex) when (ex is SqlException or InvalidOperationException)
+            {
+                StatusIsError = true;
+                StatusMessage = ex.Message;
+            }
+        }
+
+        // Nothing typed into the voucher form belongs to this post.
+        ModelState.Clear();
+        Input = new VoucherInputModel();
+        await LoadDropdownsAsync();
         return Page();
     }
 

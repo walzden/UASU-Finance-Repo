@@ -36,6 +36,7 @@ public class BulkVoucherService : IBulkVoucherService
                 SELECT 1 FROM Vouchers v
                 WHERE v.Official_Link = o.OfficialID
                   AND v.[Description] = @Description
+                  AND v.Voided_Date IS NULL
                   AND NOT EXISTS (
                       SELECT 1 FROM Voucher_Approvals va
                       WHERE va.Voucher_ID = v.Voucher_ID AND va.Approval_Status = 'Rejected')
