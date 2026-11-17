@@ -345,19 +345,23 @@ public class VoucherService : IVoucherService
 
         // Voucher_ID is server-generated (DEFAULT expression using
         // VoucherSeq), so OUTPUT INSERTED.Voucher_ID hands the new
-        // number straight back instead of re-querying for it.
+        // number straight back instead of re-querying for it. It goes
+        // INTO a table variable because Vouchers has an INSERT trigger
+        // (SQL/035), and SQL Server refuses a bare OUTPUT on such a table.
         const string sql = @"
+            DECLARE @Inserted TABLE (Voucher_ID NVARCHAR(20));
             INSERT INTO Vouchers
                 (VoucherDate, Transaction_Type, Budget_Link, Official_Link, Supplier_Link,
                  Amount, [Description], Manual_Payee_Name, Manual_Payee_Address, Payee_Category, Debt_link,
                  Is_Travel_Expense, Traveler_Name, Travel_From, Travel_To, Travel_Mode, Travel_Date, Travel_Reason,
                  Supersedes_Voucher_ID)
-            OUTPUT INSERTED.Voucher_ID
+            OUTPUT INSERTED.Voucher_ID INTO @Inserted
             VALUES
                 (@VoucherDate, @Transaction_Type, @Budget_Link, @Official_Link, @Supplier_Link,
                  @Amount, @Description, @Manual_Payee_Name, @Manual_Payee_Address, @Payee_Category, @Debt_Link,
                  @Is_Travel_Expense, @Traveler_Name, @Travel_From, @Travel_To, @Travel_Mode, @Travel_Date, @Travel_Reason,
-                 @Supersedes_Voucher_ID);";
+                 @Supersedes_Voucher_ID);
+            SELECT Voucher_ID FROM @Inserted;";
 
         var voucherId = await conn.ExecuteScalarAsync<string>(sql, input);
 

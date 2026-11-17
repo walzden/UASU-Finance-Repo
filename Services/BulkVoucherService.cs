@@ -90,14 +90,18 @@ public class BulkVoucherService : IBulkVoucherService
             if (problems.Count > 0)
                 throw new InvalidOperationException("Nothing was created: " + string.Join("; ", problems) + ".");
 
+            // OUTPUT goes INTO a table variable: Vouchers has an INSERT
+            // trigger (SQL/035), which rules out a bare OUTPUT clause.
             const string insertSql = @"
+                DECLARE @Inserted TABLE (Voucher_ID NVARCHAR(20));
                 INSERT INTO Vouchers
                     (VoucherDate, Transaction_Type, Budget_Link, Official_Link, Amount,
                      [Description], Payee_Category, Is_Travel_Expense)
-                OUTPUT INSERTED.Voucher_ID
+                OUTPUT INSERTED.Voucher_ID INTO @Inserted
                 VALUES
                     (@VoucherDate, 'Expense', @BudgetLink, @OfficialId, @Amount,
-                     @Description, 'Official', 0);";
+                     @Description, 'Official', 0);
+                SELECT Voucher_ID FROM @Inserted;";
 
             var voucherIds = new List<string>();
             foreach (var c in candidates.Values.Where(c => amountsByOfficial.ContainsKey(c.OfficialID)))

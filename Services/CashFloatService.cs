@@ -358,14 +358,18 @@ public class CashFloatService : ICashFloatService
                 throw new InvalidOperationException("Nothing was retired: " + string.Join(", ",
                     taken.Select(r => $"receipt {r.Receipt_No ?? r.Receipt_Line_ID.ToString()} is already on voucher {r.Voucher_ID}")) + ".");
 
+            // OUTPUT goes INTO a table variable: Vouchers has an INSERT
+            // trigger (SQL/035), which rules out a bare OUTPUT clause.
             const string insertVoucher = @"
+                DECLARE @Inserted TABLE (Voucher_ID NVARCHAR(20));
                 INSERT INTO Vouchers
                     (VoucherDate, Transaction_Type, Budget_Link, Official_Link, Amount,
                      [Description], Payee_Category, Is_Travel_Expense)
-                OUTPUT INSERTED.Voucher_ID
+                OUTPUT INSERTED.Voucher_ID INTO @Inserted
                 VALUES
                     (@VoucherDate, 'Expense', @BudgetLink, @OfficialId, @Amount,
-                     @Description, 'Official', 0);";
+                     @Description, 'Official', 0);
+                SELECT Voucher_ID FROM @Inserted;";
 
             // One UPDATE per voucher, so trg_CashFloatReceipts_Validate sees
             // the voucher's full set of receipts when it checks the total.
