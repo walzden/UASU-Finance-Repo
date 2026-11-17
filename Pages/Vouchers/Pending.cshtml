@@ -98,9 +98,11 @@ else
                         else
                         {
                             <button class="btn btn-outline-secondary btn-sm" type="button" disabled
-                                    title="Already has an approval on file - ask the approver to reject it first if it needs correction">Locked</button>
+                                    title="Already has an approval on file - ask the approver to reject it if it needs correction or is a duplicate; once rejected it can be voided from the list on New Voucher">Locked</button>
                         }
-                        @if (!v.IsFloatVoucher)
+                        @* Same rule as Edit: once an approver has signed, treasury can't
+                           cancel it on its own - trg_Vouchers_Void (SQL/036) enforces it. *@
+                        @if (v.CanEdit && !v.IsFloatVoucher)
                         {
                             <form method="post" asp-page-handler="Void" class="d-inline void-form" data-submit-once>
                                 <input type="hidden" name="voucherId" value="@v.Voucher_ID" />
