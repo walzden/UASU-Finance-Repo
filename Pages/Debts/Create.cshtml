@@ -8,18 +8,29 @@
     <div class="alert @(Model.StatusIsError ? "alert-danger" : "alert-success")">@Model.StatusMessage</div>
 }
 
-<form method="post" asp-page="/Debts/Create" class="row g-3" style="max-width: 640px;">
+<form method="post" data-submit-once asp-page="/Debts/Create" class="row g-3" style="max-width: 640px;">
+    @if (!ViewData.ModelState.IsValid)
+    {
+        <div class="col-12">
+            <div class="alert alert-danger mb-0">
+                <div class="fw-semibold mb-1">Not saved &mdash; fix the fields marked in red:</div>
+                <div asp-validation-summary="All" class="mb-0"></div>
+            </div>
+        </div>
+    }
     <div class="col-md-6">
         <label class="form-label">Creditor Type</label>
         <select asp-for="Input.Creditor_Type" class="form-select" onchange="toggleCreditorFields(this.value)">
             <option value="Supplier">Supplier</option>
             <option value="Official">Official</option>
         </select>
+        <span asp-validation-for="Input.Creditor_Type"></span>
     </div>
 
     <div class="col-md-6">
         <label class="form-label">Amount Owed (Sh.)</label>
         <input asp-for="Input.Total_Owed" type="number" step="0.01" class="form-control" />
+        <span asp-validation-for="Input.Total_Owed"></span>
     </div>
 
     <div class="col-md-6" id="officialField">
@@ -31,6 +42,7 @@
                 <option value="@o.Id">@o.Label</option>
             }
         </select>
+        <span asp-validation-for="Input.Official_link"></span>
     </div>
 
     <div class="col-md-6" id="supplierField">
@@ -42,21 +54,25 @@
                 <option value="@s.Id">@s.Label</option>
             }
         </select>
+        <span asp-validation-for="Input.Supplier_link"></span>
     </div>
 
     <div class="col-md-6">
         <label class="form-label">Date Incurred</label>
         <input asp-for="Input.Date_Incurred" type="date" class="form-control" />
+        <span asp-validation-for="Input.Date_Incurred"></span>
     </div>
 
     <div class="col-md-6">
         <label class="form-label">Invoice No.</label>
         <input asp-for="Input.Invoice_No" class="form-control" />
+        <span asp-validation-for="Input.Invoice_No"></span>
     </div>
 
     <div class="col-12">
         <label class="form-label">Description</label>
         <textarea asp-for="Input.Description" class="form-control" rows="2"></textarea>
+        <span asp-validation-for="Input.Description"></span>
     </div>
 
     <div class="col-12">

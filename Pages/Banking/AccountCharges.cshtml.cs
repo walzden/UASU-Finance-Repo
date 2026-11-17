@@ -37,8 +37,12 @@ public class AccountChargesModel : PageModel
 
     public async Task OnGetAsync()
     {
+        StatusMessage = TempData[SavedMessageKey] as string;
         Charges = await _bankingService.GetAccountChargesAsync();
     }
+
+    // Set just before the post-save redirect, shown once by OnGetAsync.
+    private const string SavedMessageKey = "AccountChargeSaved";
 
     public async Task<IActionResult> OnPostAsync()
     {
@@ -51,13 +55,11 @@ public class AccountChargesModel : PageModel
         try
         {
             var chargeId = await _bankingService.CreateAccountChargeAsync(Input);
-            StatusMessage = $"Charge {chargeId} logged.";
-            Input = new AccountChargeInputModel();
 
-            // See Vouchers/Create.cshtml.cs for why this is also needed -
-            // the asp-for tag helpers read from ModelState before the
-            // model, so resetting Input alone wouldn't clear the form.
-            ModelState.Clear();
+            // Post/Redirect/Get: the browser lands on a plain GET, so a
+            // Refresh reloads the page instead of logging the charge again.
+            TempData[SavedMessageKey] = $"Charge {chargeId} logged.";
+            return RedirectToPage();
         }
         catch (SqlException ex)
         {

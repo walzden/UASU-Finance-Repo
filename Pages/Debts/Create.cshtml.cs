@@ -30,8 +30,12 @@ public class CreateModel : PageModel
 
     public async Task OnGetAsync()
     {
+        StatusMessage = TempData[SavedMessageKey] as string;
         await LoadDropdownsAsync();
     }
+
+    // Set just before the post-save redirect, shown once by OnGetAsync.
+    private const string SavedMessageKey = "DebtSaved";
 
     public async Task<IActionResult> OnPostAsync()
     {
@@ -43,13 +47,13 @@ public class CreateModel : PageModel
         {
             Input.Supplier_link = null;
             if (string.IsNullOrWhiteSpace(Input.Official_link))
-                ModelState.AddModelError(nameof(Input.Official_link), "Select an official.");
+                ModelState.AddModelError("Input." + nameof(Input.Official_link), "Select an official.");
         }
         else
         {
             Input.Official_link = null;
             if (string.IsNullOrWhiteSpace(Input.Supplier_link))
-                ModelState.AddModelError(nameof(Input.Supplier_link), "Select a supplier.");
+                ModelState.AddModelError("Input." + nameof(Input.Supplier_link), "Select a supplier.");
         }
 
         if (!ModelState.IsValid)
@@ -58,13 +62,11 @@ public class CreateModel : PageModel
         try
         {
             var debtId = await _debtService.CreateDebtAsync(Input);
-            StatusMessage = $"Debt {debtId} recorded.";
-            Input = new DebtInputModel();
 
-            // See Vouchers/Create.cshtml.cs for why this is also needed -
-            // the asp-for tag helpers read from ModelState before the
-            // model, so resetting Input alone wouldn't clear the form.
-            ModelState.Clear();
+            // Post/Redirect/Get: a Refresh reloads the page instead of
+            // recording the debt again.
+            TempData[SavedMessageKey] = $"Debt {debtId} recorded.";
+            return RedirectToPage();
         }
         catch (SqlException ex)
         {

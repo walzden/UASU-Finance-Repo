@@ -39,7 +39,23 @@ public class IndexModel : PageModel
 
     public async Task OnGetAsync()
     {
+        // Set by the decide/bulk-approve handlers just before redirecting.
+        StatusMessage = TempData[DecidedMessageKey] as string;
+        StatusIsError = TempData[DecidedIsErrorKey] as bool? ?? false;
         await LoadAsync();
+    }
+
+    private const string DecidedMessageKey = "ApprovalMessage";
+    private const string DecidedIsErrorKey = "ApprovalIsError";
+
+    // Post/Redirect/Get for both handlers: the decision is already saved
+    // (or refused) by now, so send the browser to a plain GET of the queue.
+    // A Refresh then just reloads it instead of re-sending the decision.
+    private IActionResult BackToQueue()
+    {
+        TempData[DecidedMessageKey] = StatusMessage;
+        TempData[DecidedIsErrorKey] = StatusIsError;
+        return RedirectToPage();
     }
 
     public async Task<IActionResult> OnPostDecideAsync(string voucherId, string status, string? comments)
@@ -57,8 +73,7 @@ public class IndexModel : PageModel
             StatusMessage = ex.Message;
         }
 
-        await LoadAsync();
-        return Page();
+        return BackToQueue();
     }
 
     public async Task<IActionResult> OnPostBulkApproveAsync(string[] voucherIds, string? comments)
@@ -85,8 +100,7 @@ public class IndexModel : PageModel
                   string.Join("; ", failed.Select(f => $"{f.Voucher_ID} ({f.Message})"));
         }
 
-        await LoadAsync();
-        return Page();
+        return BackToQueue();
     }
 
     private async Task LoadAsync()

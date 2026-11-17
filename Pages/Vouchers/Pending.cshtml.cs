@@ -64,20 +64,11 @@ public class PendingModel : PageModel
         try
         {
             await _voucherService.UpdateVoucherAsync(Input, VoucherId);
-            StatusMessage = $"Voucher {VoucherId} updated.";
-            Input = new VoucherInputModel();
-            VoucherId = string.Empty;
 
-            // See Vouchers/Create.cshtml.cs for why this is also needed -
-            // the asp-for tag helpers read from ModelState before the
-            // model, so resetting Input alone wouldn't clear the form.
-            ModelState.Clear();
-
-            // Refresh so the just-corrected voucher's row (and its
-            // now-updated values, if its edit panel is reopened) reflect
-            // the change rather than the list going stale until the next
-            // full page load.
-            Vouchers = await _voucherService.GetPendingVouchersAsync();
+            // Post/Redirect/Get: the fresh GET shows the corrected row, and
+            // a Refresh can't re-send the edit.
+            TempData[VoidedMessageKey] = $"Voucher {VoucherId} updated.";
+            return RedirectToPage();
         }
         catch (SqlException ex)
         {

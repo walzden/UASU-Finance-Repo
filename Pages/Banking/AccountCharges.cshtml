@@ -42,14 +42,25 @@
 <div class="card mb-4">
     <div class="card-header">Log an Account Charge</div>
     <div class="card-body">
-        <form method="post" asp-page="/Banking/AccountCharges" class="row g-3">
+        <form method="post" data-submit-once asp-page="/Banking/AccountCharges" class="row g-3">
+            @if (!ViewData.ModelState.IsValid)
+            {
+                <div class="col-12">
+                    <div class="alert alert-danger mb-0">
+                        <div class="fw-semibold mb-1">Not saved &mdash; fix the fields marked in red:</div>
+                        <div asp-validation-summary="All" class="mb-0"></div>
+                    </div>
+                </div>
+            }
             <div class="col-md-4">
                 <label class="form-label">Charge Date</label>
                 <input asp-for="Input.Charge_Date" type="date" class="form-control" />
+                <span asp-validation-for="Input.Charge_Date"></span>
             </div>
             <div class="col-md-4">
                 <label class="form-label">Bank Account</label>
                 <input asp-for="Input.Bank_Account" class="form-control" list="bankAccounts" />
+                <span asp-validation-for="Input.Bank_Account"></span>
                 <datalist id="bankAccounts">
                     @foreach (var acct in Model.Charges.Select(c => c.Bank_Account).Distinct())
                     {
@@ -66,14 +77,17 @@
                     <option>Maintenance Fee</option>
                     <option>Other</option>
                 </select>
+                <span asp-validation-for="Input.Charge_Type"></span>
             </div>
             <div class="col-md-4">
                 <label class="form-label">Amount (Sh.)</label>
                 <input asp-for="Input.Charge_Amount" type="number" step="0.01" class="form-control" />
+                <span asp-validation-for="Input.Charge_Amount"></span>
             </div>
             <div class="col-md-8">
                 <label class="form-label">Notes</label>
                 <input asp-for="Input.Notes" class="form-control" placeholder="e.g. August 2026 statement, ledger fee line item" />
+                <span asp-validation-for="Input.Notes"></span>
             </div>
             <div class="col-12">
                 <button type="submit" class="btn btn-primary">Log Charge</button>
