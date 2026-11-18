@@ -115,7 +115,7 @@ else
         </div>
     </div>
 
-    <h5 class="mb-2 text-muted" style="font-size:1rem;">@(Model.Groups.Any() ? "Or review them by week and budget code" : "Or review them one by one")</h5>
+    <h5 class="mb-2 text-muted" style="font-size:1rem;">@(Model.Groups.Any() ? "Or review them by budget code" : "Or review them one by one")</h5>
 
     @foreach (var group in Model.Groups)
     {
@@ -123,17 +123,23 @@ else
             <div class="group-header">
                 <span class="title">@group.Budget_ID &middot; @group.Budget_Category</span>
                 <span class="meta">
-                    Week of @group.WeekStart.ToString("yyyy-MM-dd") &middot; @group.Vouchers.Count vouchers &middot;
+                    @(group.From == group.To ? group.From.ToString("yyyy-MM-dd") : $"{group.From:yyyy-MM-dd} to {group.To:yyyy-MM-dd}") &middot;
+                    @group.Vouchers.Count voucher@(group.Vouchers.Count == 1 ? "" : "s") &middot;
                     Sh. @group.Vouchers.Sum(v => v.Amount).ToString("N2") total
                 </span>
-                <form method="post" asp-page-handler="BulkApprove" class="ms-auto d-flex align-items-center gap-2">
-                    @foreach (var v in group.Vouchers)
-                    {
-                        <input type="hidden" name="voucherIds" value="@v.Voucher_ID" />
-                    }
-                    <textarea name="comments" class="form-control form-control-sm" placeholder="Comments for all @group.Vouchers.Count (optional)" style="width:220px;" rows="1"></textarea>
-                    <button type="submit" class="btn btn-success btn-sm">Approve all @group.Vouchers.Count</button>
-                </form>
+                @* A single voucher is decided on its own row below; the
+                   batch button only appears once there's something to batch. *@
+                @if (group.Vouchers.Count > 1)
+                {
+                    <form method="post" asp-page-handler="BulkApprove" class="ms-auto d-flex align-items-center gap-2" data-submit-once>
+                        @foreach (var v in group.Vouchers)
+                        {
+                            <input type="hidden" name="voucherIds" value="@v.Voucher_ID" />
+                        }
+                        <textarea name="comments" class="form-control form-control-sm" placeholder="Comments for all @group.Vouchers.Count (optional)" style="width:220px;" rows="1"></textarea>
+                        <button type="submit" class="btn btn-success btn-sm">Approve all @group.Vouchers.Count</button>
+                    </form>
+                }
             </div>
             <table class="table table-bordered align-middle mb-0">
                 <thead class="table-light">
@@ -162,7 +168,7 @@ else
     {
         if (Model.Groups.Any())
         {
-            <h5 class="mb-2 text-muted" style="font-size:1rem;">Not part of a group</h5>
+            <h5 class="mb-2 text-muted" style="font-size:1rem;">No budget code</h5>
         }
 
         <table class="table table-bordered align-middle">

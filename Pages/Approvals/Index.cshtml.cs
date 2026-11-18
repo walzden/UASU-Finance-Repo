@@ -21,13 +21,17 @@ public class IndexModel : PageModel
         _voucherService = voucherService;
     }
 
-    public record ApprovalGroup(string Budget_ID, string Budget_Category, DateTime WeekStart, List<PendingApproval> Vouchers);
+    public record ApprovalGroup(string Budget_ID, string Budget_Category, List<PendingApproval> Vouchers)
+    {
+        public DateTime From => Vouchers.Min(v => v.VoucherDate);
+        public DateTime To => Vouchers.Max(v => v.VoucherDate);
+    }
 
-    // Vouchers sharing a Budget Code, with two or more falling in the
-    // same Monday-starting week - each gets a card with an "Approve
-    // all" button. Everything else (a budget code with only one voucher
-    // that week, or no budget code at all) stays in Ungrouped, exactly
-    // as the page looked before bulk approval existed.
+    // One card per budget code, whatever week the vouchers fall in (it
+    // used to need two or more in the same week, so vouchers spread over
+    // several weeks never formed a card). Every code gets a card, even
+    // with one voucher; only vouchers with no budget code are left in
+    // Ungrouped.
     public List<ApprovalGroup> Groups { get; set; } = new();
     public List<PendingApproval> Ungrouped { get; set; } = new();
 
@@ -121,10 +125,10 @@ public class IndexModel : PageModel
 
         var byGroup = approvals
             .Where(a => !string.IsNullOrEmpty(a.Budget_ID))
-            .GroupBy(a => (a.Budget_ID, a.WeekStart))
-            .Where(g => g.Count() > 1)
-            .Select(g => new ApprovalGroup(g.Key.Budget_ID!, g.First().Budget_Category ?? g.Key.Budget_ID!, g.Key.WeekStart, g.OrderBy(a => a.VoucherDate).ToList()))
-            .OrderBy(g => g.WeekStart).ThenBy(g => g.Budget_Category)
+            .GroupBy(a => a.Budget_ID!)
+            .Select(g => new ApprovalGroup(g.Key, g.First().Budget_Category ?? g.Key, g.OrderBy(a => a.VoucherDate).ToList()))
+            // Same order as the "Review & approve all" summary: largest total first.
+            .OrderByDescending(g => g.Vouchers.Sum(v => v.Amount)).ThenBy(g => g.Budget_Category)
             .ToList();
 
         var groupedVoucherIds = byGroup.SelectMany(g => g.Vouchers.Select(v => v.Voucher_ID)).ToHashSet();
