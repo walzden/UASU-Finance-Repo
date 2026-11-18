@@ -31,6 +31,18 @@ public class IndexModel : PageModel
     public List<ApprovalGroup> Groups { get; set; } = new();
     public List<PendingApproval> Ungrouped { get; set; } = new();
 
+    // Everything waiting on this approver, for the "Review & approve all"
+    // summary: one line per budget code (whatever the week), largest total
+    // first. Approving from there posts to the same BulkApprove handler
+    // as the weekly cards, so the database checks each voucher the same way.
+    public List<PendingApproval> AllPending { get; set; } = new();
+    public record BudgetSummary(string Key, string Label, List<PendingApproval> Vouchers)
+    {
+        public decimal Total => Vouchers.Sum(v => v.Amount);
+        public int OwnCount => Vouchers.Count(v => v.IsOwnVoucher);
+    }
+    public List<BudgetSummary> ByBudget { get; set; } = new();
+
     public string? StatusMessage { get; set; }
     public bool StatusIsError { get; set; }
 
@@ -119,5 +131,15 @@ public class IndexModel : PageModel
 
         Groups = byGroup;
         Ungrouped = approvals.Where(a => !groupedVoucherIds.Contains(a.Voucher_ID)).ToList();
+
+        AllPending = approvals;
+        ByBudget = approvals
+            .GroupBy(a => a.Budget_ID ?? "")
+            .Select(g => new BudgetSummary(
+                g.Key == "" ? "none" : g.Key,
+                g.Key == "" ? "No budget code" : $"{g.Key} · {g.First().Budget_Category ?? g.Key}",
+                g.OrderBy(a => a.VoucherDate).ToList()))
+            .OrderByDescending(b => b.Total)
+            .ToList();
     }
 }
