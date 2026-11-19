@@ -606,6 +606,47 @@ public class VoucherService : IVoucherService
         return await conn.QueryAsync<ApprovedUnpaidVoucherRow>(sql);
     }
 
+    // The date a payment is recorded under is what the cash book and Monthly
+    // Certification use, so it has to be the day the money actually left -
+    // within limits that keep the books consistent:
+    //   - not in the future;
+    //   - not before the withdrawal that funded it (that cash didn't exist yet);
+    //   - not in, or before, the latest certified month - book balances are
+    //     cumulative, so a payment dated there would change figures already
+    //     certified.
+    // Blank means today. Returns the date to store.
+    private static async Task<DateTime> ValidatePaymentDateAsync(
+        SqlConnection conn, SqlTransaction transaction, DateTime? requested, string? withdrawalId)
+    {
+        var date = (requested ?? DateTime.Today).Date;
+
+        if (date > DateTime.Today)
+            throw new InvalidOperationException($"The date paid ({date:d MMM yyyy}) is in the future.");
+
+        if (!string.IsNullOrWhiteSpace(withdrawalId))
+        {
+            var withdrawn = await conn.ExecuteScalarAsync<DateTime?>(
+                "SELECT Withdrawal_Date FROM BankWithdrawals WHERE Withdrawal_ID = @Id;",
+                new { Id = withdrawalId }, transaction);
+            if (withdrawn is not null && date < withdrawn.Value.Date)
+                throw new InvalidOperationException(
+                    $"The date paid ({date:d MMM yyyy}) is before {withdrawalId} was withdrawn ({withdrawn.Value:d MMM yyyy}). Cash from a withdrawal can't be paid out before it was drawn.");
+        }
+
+        var latest = await conn.QuerySingleOrDefaultAsync<(int Year, int Month)?>(@"
+            SELECT TOP 1 Period_Year, Period_Month FROM MonthlyCertifications
+            ORDER BY Period_Year DESC, Period_Month DESC;", transaction: transaction);
+        if (latest is { } c && (date.Year < c.Year || (date.Year == c.Year && date.Month <= c.Month)))
+        {
+            var certified = new DateTime(c.Year, c.Month, 1);
+            throw new InvalidOperationException(
+                $"{certified:MMMM yyyy} has already been certified, so a payment can't be dated {date:d MMM yyyy} - it would change certified figures. " +
+                $"Date it {certified.AddMonths(1):d MMM yyyy} or later, and explain the late entry in that month's certification notes.");
+        }
+
+        return date;
+    }
+
     private class PayableVoucher
     {
         public string Voucher_ID { get; set; } = string.Empty;
@@ -651,10 +692,12 @@ public class VoucherService : IVoucherService
             if (missing.Count > 0)
                 throw new InvalidOperationException($"Voucher(s) not found: {string.Join(", ", missing)}.");
 
+            var paymentDate = await ValidatePaymentDateAsync(conn, transaction, input.Payment_Date, input.Withdrawal_Link);
+
             const string insertPayment = @"
                 INSERT INTO Payments (Payment_Date, Payment_Mode, [Description], Amount_Paid, Reference_No, Bank_Account)
                 OUTPUT INSERTED.Payment_ID
-                VALUES (GETDATE(), @Payment_Mode, @Description, @Amount, @Reference_No, @Bank_Account);";
+                VALUES (@PaymentDate, @Payment_Mode, @Description, @Amount, @Reference_No, @Bank_Account);";
 
             // trg_PaymentAllocations_RequireApproval and trg_PaymentStatusUpdate
             // fire per insert - an unapproved voucher, or an amount exceeding
@@ -680,6 +723,7 @@ public class VoucherService : IVoucherService
 
                 var paymentId = await conn.ExecuteScalarAsync<string>(insertPayment, new
                 {
+                    PaymentDate = paymentDate,
                     input.Payment_Mode,
                     input.Description,
                     Amount = amount,

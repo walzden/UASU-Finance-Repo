@@ -261,6 +261,15 @@ public class PaymentInputModel
     // withdrawal - RecordPaymentAsync also inserts a WithdrawalPayments
     // link row for each payment so they stay tied together.
     public string? Withdrawal_Link { get; set; }
+
+    // The day the money actually left (cash handed over, M-Pesa sent,
+    // cheque issued) - this is what the cash book and Monthly
+    // Certification use, so it must not default to the day it's typed in
+    // when that's later. Blank means today. RecordPaymentAsync refuses a
+    // future date, a date before the funding withdrawal, and a date in an
+    // already-certified month.
+    [DataType(DataType.Date)]
+    public DateTime? Payment_Date { get; set; }
 }
 
 // One payment created by RecordPaymentAsync - one per payee in the batch.

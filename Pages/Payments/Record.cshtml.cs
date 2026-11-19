@@ -12,12 +12,19 @@ public class RecordModel : PageModel
 {
     private readonly IVoucherService _voucherService;
     private readonly IBankingService _bankingService;
+    private readonly ICertificationService _certificationService;
 
-    public RecordModel(IVoucherService voucherService, IBankingService bankingService)
+    public RecordModel(IVoucherService voucherService, IBankingService bankingService, ICertificationService certificationService)
     {
         _voucherService = voucherService;
         _bankingService = bankingService;
+        _certificationService = certificationService;
     }
+
+    // Earliest date a payment may be dated: the day after the last
+    // certified month (null if nothing is certified). The service enforces
+    // the same rule; this only sets the date picker's lower limit.
+    public DateTime? EarliestPaymentDate { get; set; }
 
     [BindProperty]
     public PaymentInputModel Input { get; set; } = new();
@@ -91,5 +98,9 @@ public class RecordModel : PageModel
     {
         ApprovedVouchers = await _voucherService.GetApprovedUnpaidVouchersDetailedAsync();
         AvailableWithdrawals = await _bankingService.GetWithdrawalsWithBalanceAsync();
+
+        var latest = (await _certificationService.GetCertificationsAsync())
+            .OrderByDescending(c => c.Period_Year).ThenByDescending(c => c.Period_Month).FirstOrDefault();
+        EarliestPaymentDate = latest is null ? null : new DateTime(latest.Period_Year, latest.Period_Month, 1).AddMonths(1);
     }
 }
