@@ -43,6 +43,33 @@ public class IndexModel : PageModel
     public decimal FloatReceiptsNotSettled => Floats.Sum(f => f.Spent - f.Settled);
     public IEnumerable<CertificationRow> Certifications { get; set; } = Enumerable.Empty<CertificationRow>();
 
+    // ---- Preview before certifying ----
+
+    // Book balances at the end of the previous month, so the page can show
+    // the month's net movement (opening -> closing) for cash and bank.
+    public decimal OpeningCash { get; set; }
+    public decimal OpeningBank { get; set; }
+
+    public List<VarianceHint> Hints { get; set; } = new();
+
+    // Set by "Check figures": the actual figures were compared with the
+    // book and nothing was saved. Certify is offered only after this.
+    public bool Checked { get; set; }
+    public decimal CashVariance => Input.Actual_Cash_On_Hand - BookCashBalance;
+    public decimal BankVariance => Input.Actual_Bank_Balance - BookBankBalance;
+    public bool Agrees => CashVariance == 0 && BankVariance == 0;
+
+    // The loaded month's existing certification, if any - it can't be
+    // certified again (UX_MonthlyCertifications_Period, SQL/037).
+    public CertificationRow? ExistingCertification { get; set; }
+
+    // Book balances as they compute today for each certified month. When
+    // they differ from what was certified, something dated in that month
+    // was changed afterwards - the history flags it.
+    public Dictionary<string, (decimal Cash, decimal Bank)> CurrentBook { get; set; } = new();
+
+    public string? ErrorMessage { get; set; }
+
     [TempData]
     public string? StatusMessage { get; set; }
 
@@ -80,7 +107,22 @@ public class IndexModel : PageModel
         Input.Period_Year = Year;
         Input.Period_Month = Month;
 
-        await LoadBalancesAsync(Year, Month);
+        await LoadPageAsync();
+    }
+
+    // "Check figures": compare the actual cash and bank with the book and
+    // list what could explain any difference. Saves nothing.
+    public async Task<IActionResult> OnPostCheckAsync()
+    {
+        ModelState.Clear();
+        Year = Input.Period_Year;
+        Month = Input.Period_Month;
+
+        if (RequireAmountsEntered() && TryValidateModel(Input, nameof(Input)))
+            Checked = true;
+
+        await LoadPageAsync();
+        return Page();
     }
 
     public async Task<IActionResult> OnPostAsync()
@@ -90,16 +132,48 @@ public class IndexModel : PageModel
         // submitted, otherwise the other form's untouched, still-default
         // fields (e.g. Period_Month = 0) fail their own validation.
         ModelState.Clear();
+        Year = Input.Period_Year;
+        Month = Input.Period_Month;
 
-        if (!TryValidateModel(Input, nameof(Input)))
+        if (!RequireAmountsEntered() || !TryValidateModel(Input, nameof(Input)))
         {
-            await LoadBalancesAsync(Input.Period_Year, Input.Period_Month);
-            Certifications = await _certificationService.GetCertificationsAsync();
-            OpeningBalanceInput = await _certificationService.GetOpeningBalanceAsync();
+            await LoadPageAsync();
             return Page();
         }
 
-        var certificationId = await _certificationService.CertifyAsync(Input, CurrentOfficialId);
+        await LoadPageAsync();
+
+        if (ExistingCertification is not null)
+        {
+            ErrorMessage = $"{MonthName(Month)} {Year} was already certified on {ExistingCertification.Certified_Date:d MMM yyyy} ({ExistingCertification.Certification_ID}). A month can only be certified once.";
+            return Page();
+        }
+
+        // The page only offers Certify after "Check figures", but the rule
+        // that matters is enforced here: a month that doesn't agree must
+        // say why.
+        Checked = true;
+        if (!Agrees && string.IsNullOrWhiteSpace(Input.Notes))
+        {
+            ModelState.AddModelError("Input.Notes",
+                "The figures don't agree with the book. Explain the variance in the notes before certifying.");
+            return Page();
+        }
+
+        string certificationId;
+        try
+        {
+            certificationId = await _certificationService.CertifyAsync(Input, CurrentOfficialId);
+        }
+        catch (Microsoft.Data.SqlClient.SqlException ex)
+        {
+            // e.g. UX_MonthlyCertifications_Period if someone else certified
+            // this month in the meantime.
+            ErrorMessage = ex.Number is 2601 or 2627
+                ? $"{MonthName(Month)} {Year} has already been certified. A month can only be certified once."
+                : ex.Message;
+            return Page();
+        }
         StatusMessage = $"Certified {Input.Period_Year}-{Input.Period_Month:D2} ({certificationId}).";
 
         // Redirect (PRG) back to the same period so a refresh doesn't
@@ -113,8 +187,9 @@ public class IndexModel : PageModel
 
         if (!TryValidateModel(OpeningBalanceInput, nameof(OpeningBalanceInput)))
         {
-            await LoadBalancesAsync(Year, Month);
-            Certifications = await _certificationService.GetCertificationsAsync();
+            var typed = OpeningBalanceInput;   // keep what was typed
+            await LoadPageAsync();
+            OpeningBalanceInput = typed;
             return Page();
         }
 
@@ -126,9 +201,46 @@ public class IndexModel : PageModel
 
     private async Task LoadBalancesAsync(int year, int month)
     {
+        var monthStart = new DateTime(year, month, 1);
+        var monthEnd = monthStart.AddMonths(1).AddDays(-1);
+
         (BookCashBalance, BookBankBalance) = await _certificationService.GetBookBalancesAsync(year, month);
-        Floats = await _floatService.GetPositionsAsOfAsync(new DateTime(year, month, 1).AddMonths(1).AddDays(-1));
+        (OpeningCash, OpeningBank) = await _certificationService.GetBookBalancesAsOfAsync(monthStart.AddDays(-1));
+        Floats = await _floatService.GetPositionsAsOfAsync(monthEnd);
+        Hints = await _certificationService.GetVarianceHintsAsync(monthEnd);
     }
+
+    // Everything the page shows for the loaded month, used by every handler.
+    private async Task LoadPageAsync()
+    {
+        Certifications = (await _certificationService.GetCertificationsAsync()).ToList();
+        OpeningBalanceInput = await _certificationService.GetOpeningBalanceAsync();
+        ExistingCertification = Certifications.FirstOrDefault(c => c.Period_Year == Year && c.Period_Month == Month);
+        await LoadBalancesAsync(Year, Month);
+
+        foreach (var c in Certifications)
+            CurrentBook[c.Certification_ID] = await _certificationService.GetBookBalancesAsync(c.Period_Year, c.Period_Month);
+    }
+
+    // ModelState.Clear() above also clears "the value '' is invalid", so a
+    // blank amount would otherwise bind silently as 0 and be compared or
+    // certified as Sh. 0. Both amounts must actually be entered.
+    private bool RequireAmountsEntered()
+    {
+        var ok = true;
+        foreach (var field in new[] { "Input.Actual_Cash_On_Hand", "Input.Actual_Bank_Balance" })
+        {
+            if (string.IsNullOrWhiteSpace(Request.Form[field]))
+            {
+                ModelState.AddModelError(field, "Enter the amount (0 if there is none).");
+                ok = false;
+            }
+        }
+        return ok;
+    }
+
+    public static string MonthName(int month) =>
+        System.Globalization.CultureInfo.InvariantCulture.DateTimeFormat.GetMonthName(month);
 
     // Full certification history - already uncapped, unlike the
     // Acknowledge page's "recent 5" list, so this reuses it directly.

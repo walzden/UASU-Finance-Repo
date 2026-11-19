@@ -10,6 +10,7 @@ public interface ICertificationService
     Task<(decimal CashBalance, decimal BankBalance)> GetBookBalancesAsOfAsync(DateTime asOf);
     Task<string> CertifyAsync(CertificationInputModel input, string certifiedByOfficialId);
     Task<IEnumerable<CertificationRow>> GetCertificationsAsync();
+    Task<List<VarianceHint>> GetVarianceHintsAsync(DateTime monthEnd);
 
     Task<OpeningBalanceInputModel> GetOpeningBalanceAsync();
     Task SetOpeningBalanceAsync(OpeningBalanceInputModel input, string setByOfficialId);
@@ -156,6 +157,147 @@ public class CertificationService : ICertificationService
     {
         public decimal? CashBalance { get; set; }
         public decimal? BankBalance { get; set; }
+    }
+
+    // Things recorded (or not yet recorded) as at month-end that commonly
+    // make the physical count or the bank statement disagree with the
+    // book balance. Read-only - it only points at them. Each query uses
+    // the same definitions the rest of the app does (BankReconciliation,
+    // VoucherPaymentEligible, the chargeable-payment rule), so the amounts
+    // here match the pages the links lead to.
+    public async Task<List<VarianceHint>> GetVarianceHintsAsync(DateTime monthEnd)
+    {
+        using var conn = _db.CreateConnection();
+        var me = monthEnd.Date;
+        var hints = new List<VarianceHint>();
+
+        // 1. Withdrawn cash not yet matched to payments or charges.
+        var wd = (await conn.QueryAsync<(string Id, decimal Left)>(@"
+            SELECT br.Withdrawal_ID, br.UnallocatedBalance
+            FROM BankReconciliation br
+            INNER JOIN BankWithdrawals w ON w.Withdrawal_ID = br.Withdrawal_ID
+            WHERE w.Withdrawal_Date <= @Me AND br.UnallocatedBalance <> 0
+            ORDER BY w.Withdrawal_Date;", new { Me = me })).ToList();
+        if (wd.Count > 0)
+            hints.Add(new VarianceHint
+            {
+                Title = "Withdrawn cash not yet accounted for",
+                Explanation = "Cash drawn from the bank that isn't matched to payments or charges yet (today's figures). If some of it has already been spent, the cash count will be lower than book cash until those payments or fees are recorded. A negative figure means more was recorded against the withdrawal than it held.",
+                Count = wd.Count,
+                Amount = wd.Sum(w => w.Left),
+                Affects = "Cash",
+                Examples = wd.Take(6).Select(w => $"{w.Id} (Sh. {w.Left:N2})").ToList(),
+                LinkPage = "/Banking/Withdrawals",
+                LinkText = "Withdrawals"
+            });
+
+        // 2. M-Pesa expense payments with no charge logged.
+        var mp = (await conn.QueryAsync<(string Id, decimal Amount, string? Wd)>(@"
+            SELECT p.Payment_ID, p.Amount_Paid,
+                   (SELECT TOP 1 wp.Withdrawal_ID FROM WithdrawalPayments wp WHERE wp.Payment_ID = p.Payment_ID)
+            FROM Payments p
+            WHERE p.Payment_Date <= @Me
+              AND p.Payment_Mode = 'M-Pesa'
+              AND NOT EXISTS (SELECT 1 FROM PaymentCharges pc WHERE pc.Payment_ID = p.Payment_ID)
+              AND EXISTS (SELECT 1 FROM PaymentAllocations pa INNER JOIN Vouchers v ON v.Voucher_ID = pa.Voucher_ID
+                          WHERE pa.Payment_ID = p.Payment_ID AND v.Transaction_Type = 'Expense')
+            ORDER BY p.Payment_Date, p.Payment_ID;", new { Me = me })).ToList();
+        if (mp.Count > 0)
+            hints.Add(new VarianceHint
+            {
+                Title = "M-Pesa payments with no fee logged",
+                Explanation = "Each M-Pesa transfer costs a fee that has left the cash or account but isn't in the books yet, so book balances are higher than reality by the total of those fees.",
+                Count = mp.Count,
+                Amount = null,
+                Affects = mp.Any(m => m.Wd is null) ? "Cash or bank" : "Cash",
+                Examples = mp.GroupBy(m => m.Wd ?? "no withdrawal").Take(6)
+                             .Select(g => $"{g.Key}: {g.Count()} payment{(g.Count() == 1 ? "" : "s")}").ToList(),
+                LinkPage = "/Payments/Charges",
+                LinkText = "Log Payment Charges"
+            });
+
+        // 3. Float receipts spent but not settled (also detailed in the floats table).
+        var fl = (await conn.QueryAsync<(string Id, decimal Unsettled)>(@"
+            SELECT Float_ID, Spent - Settled FROM fn_CashFloatPosition(@Me) WHERE Spent - Settled <> 0;",
+            new { Me = me })).ToList();
+        if (fl.Count > 0)
+            hints.Add(new VarianceHint
+            {
+                Title = "Float receipts spent but not settled",
+                Explanation = "Money a float holder has spent is still counted as cash in the books until its retirement voucher is approved and settled, so the count comes out lower by this amount.",
+                Count = fl.Count,
+                Amount = fl.Sum(f => f.Unsettled),
+                Affects = "Cash",
+                Examples = fl.Take(6).Select(f => $"{f.Id} (Sh. {f.Unsettled:N2})").ToList(),
+                LinkPage = "/Floats/Index",
+                LinkText = "Cash Floats"
+            });
+
+        // 4 and 5. Expense vouchers dated in or before the month that aren't paid.
+        var unpaid = (await conn.QueryAsync<(string Id, decimal Amount, bool Approved)>(@"
+            SELECT v.Voucher_ID, v.Amount,
+                   CAST(CASE WHEN e.Voucher_ID IS NOT NULL THEN 1 ELSE 0 END AS bit)
+            FROM Vouchers v
+            LEFT JOIN VoucherPaymentEligible e ON e.Voucher_ID = v.Voucher_ID
+            WHERE v.VoucherDate <= @Me
+              AND v.Transaction_Type = 'Expense'
+              AND v.Is_Legacy = 0
+              AND v.Voided_Date IS NULL
+              AND NOT EXISTS (SELECT 1 FROM Voucher_Approvals va WHERE va.Voucher_ID = v.Voucher_ID AND va.Approval_Status = 'Rejected')
+              AND NOT EXISTS (SELECT 1 FROM PaymentAllocations pa WHERE pa.Voucher_ID = v.Voucher_ID)
+            ORDER BY v.VoucherDate, v.Voucher_ID;", new { Me = me })).ToList();
+
+        var approved = unpaid.Where(u => u.Approved).ToList();
+        if (approved.Count > 0)
+            hints.Add(new VarianceHint
+            {
+                Title = "Approved vouchers not recorded as paid",
+                Explanation = "If any of these were actually paid during the month, the money has gone but the books don't show it yet. Record the payment with its real date.",
+                Count = approved.Count,
+                Amount = approved.Sum(a => a.Amount),
+                Affects = "Cash or bank",
+                Examples = approved.Take(6).Select(a => $"{a.Id} (Sh. {a.Amount:N2})").ToList(),
+                LinkPage = "/Payments/Record",
+                LinkText = "Record a Payment"
+            });
+
+        var waiting = unpaid.Where(u => !u.Approved).ToList();
+        if (waiting.Count > 0)
+            hints.Add(new VarianceHint
+            {
+                Title = "Vouchers still awaiting approval",
+                Explanation = "Normally nothing has been paid yet, so these don't cause a variance. If cash was handed over before approval, the count will be lower than book cash by the amount paid.",
+                Count = waiting.Count,
+                Amount = waiting.Sum(w => w.Amount),
+                Affects = "Cash or bank",
+                Examples = waiting.Take(6).Select(w => $"{w.Id} (Sh. {w.Amount:N2})").ToList(),
+                LinkPage = "/Vouchers/Pending",
+                LinkText = "Pending Vouchers"
+            });
+
+        // 6. Income vouchers not yet marked as received.
+        var inc = (await conn.QueryAsync<(string Id, decimal Amount)>(@"
+            SELECT v.Voucher_ID, v.Amount
+            FROM Vouchers v
+            WHERE v.VoucherDate <= @Me
+              AND v.Transaction_Type = 'Income'
+              AND v.Voided_Date IS NULL
+              AND NOT EXISTS (SELECT 1 FROM PaymentAllocations pa WHERE pa.Voucher_ID = v.Voucher_ID)
+            ORDER BY v.VoucherDate;", new { Me = me })).ToList();
+        if (inc.Count > 0)
+            hints.Add(new VarianceHint
+            {
+                Title = "Income not yet recorded as received",
+                Explanation = "If this money has already arrived, the count or the bank statement will be higher than the books until it's recorded as received.",
+                Count = inc.Count,
+                Amount = inc.Sum(i => i.Amount),
+                Affects = "Cash or bank",
+                Examples = inc.Take(6).Select(i => $"{i.Id} (Sh. {i.Amount:N2})").ToList(),
+                LinkPage = "/Payments/Record",
+                LinkText = "Record a Payment"
+            });
+
+        return hints;
     }
 
     public async Task<string> CertifyAsync(CertificationInputModel input, string certifiedByOfficialId)

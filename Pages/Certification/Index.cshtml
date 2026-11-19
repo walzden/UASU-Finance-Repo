@@ -52,12 +52,81 @@
     </div>
 </form>
 
-<h4 class="mt-4">Book Balances as of @System.Globalization.CultureInfo.InvariantCulture.DateTimeFormat.GetMonthName(Model.Month) @Model.Year (month-end)</h4>
-<table class="table table-sm" style="max-width: 480px;">
-    <tr><th>Cash</th><td>Sh. @Model.BookCashBalance.ToString("N2")</td></tr>
-    <tr><th>Bank</th><td>Sh. @Model.BookBankBalance.ToString("N2")</td></tr>
+@{
+    var monthLabel = $"{IndexModel.MonthName(Model.Month)} {Model.Year}";
+    var monthEndLabel = new DateTime(Model.Year, Model.Month, 1).AddMonths(1).AddDays(-1).ToString("d MMM yyyy");
+}
+
+@if (!string.IsNullOrEmpty(Model.ErrorMessage))
+{
+    <div class="alert alert-danger mt-3" style="max-width: 820px;">@Model.ErrorMessage</div>
+}
+
+<h4 class="mt-4">Book balances for @monthLabel</h4>
+<table class="table table-sm align-middle" style="max-width: 640px;">
+    <thead class="table-light">
+        <tr>
+            <th></th>
+            <th class="text-end">Opening<div class="small text-muted fw-normal">end of previous month</div></th>
+            <th class="text-end">Movement<div class="small text-muted fw-normal">during @IndexModel.MonthName(Model.Month)</div></th>
+            <th class="text-end">Closing<div class="small text-muted fw-normal">book, @monthEndLabel</div></th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <th>Cash</th>
+            <td class="text-end">@Model.OpeningCash.ToString("N2")</td>
+            <td class="text-end">@((Model.BookCashBalance - Model.OpeningCash).ToString("+#,##0.00;-#,##0.00;0.00"))</td>
+            <td class="text-end fw-semibold">@Model.BookCashBalance.ToString("N2")</td>
+        </tr>
+        <tr>
+            <th>Bank</th>
+            <td class="text-end">@Model.OpeningBank.ToString("N2")</td>
+            <td class="text-end">@((Model.BookBankBalance - Model.OpeningBank).ToString("+#,##0.00;-#,##0.00;0.00"))</td>
+            <td class="text-end fw-semibold">@Model.BookBankBalance.ToString("N2")</td>
+        </tr>
+    </tbody>
 </table>
-<div class="form-text mb-3">Computed from Payments up to and including this month - Cash mode only counts as physical cash; M-Pesa/Bank Transfer/Cheque count as bank.</div>
+<div class="form-text mb-3" style="max-width: 640px;">Computed from what's recorded up to and including month-end. Cash is cash in hand, including cash drawn from the bank; M-Pesa, bank transfers and cheques paid straight from the account count as bank.</div>
+
+<div class="card mb-4" style="max-width: 820px;">
+    <div class="card-header fw-semibold">What could explain a variance &mdash; as at @monthEndLabel</div>
+    <div class="card-body">
+        @if (!Model.Hints.Any())
+        {
+            <p class="mb-0 text-success">Nothing outstanding that the app knows of. If the figures still don't agree, look for something not entered at all (a payment, a charge, money received).</p>
+        }
+        else
+        {
+            <p class="small text-muted">Things recorded in the app that are unfinished at month-end. Each can make your count or bank statement differ from the book. Sort them out first, or mention them in the notes.</p>
+            <ul class="list-unstyled mb-0">
+                @foreach (var h in Model.Hints)
+                {
+                    <li class="hint mb-3">
+                        <div class="d-flex flex-wrap align-items-baseline gap-2">
+                            <span class="fw-semibold">@h.Title</span>
+                            <span class="badge bg-secondary">@h.Count</span>
+                            @if (h.Amount is not null)
+                            {
+                                <span class="fw-semibold">Sh. @h.Amount.Value.ToString("N2")</span>
+                            }
+                            <span class="small text-muted">affects @h.Affects.ToLowerInvariant()</span>
+                            @if (h.LinkPage is not null)
+                            {
+                                <a class="small ms-auto" href="@h.LinkPage">@h.LinkText &rarr;</a>
+                            }
+                        </div>
+                        <div class="small">@h.Explanation</div>
+                        @if (h.Examples.Any())
+                        {
+                            <div class="small text-muted">@string.Join(" · ", h.Examples)@(h.Count > h.Examples.Count && h.Examples.Count >= 6 ? " …" : "")</div>
+                        }
+                    </li>
+                }
+            </ul>
+        }
+    </div>
+</div>
 
 @if (Model.Floats.Any())
 {
@@ -117,33 +186,107 @@
     }
 }
 
-<form method="post" asp-page="/Certification/Index" class="row g-3" style="max-width: 480px;">
-    <input type="hidden" asp-for="Input.Period_Year" />
-    <input type="hidden" asp-for="Input.Period_Month" />
-    <div class="col-md-6">
-        <label class="form-label">Actual Cash on Hand (Sh.)</label>
-        <input asp-for="Input.Actual_Cash_On_Hand" type="number" step="0.01" class="form-control" />
-        <span asp-validation-for="Input.Actual_Cash_On_Hand" class="text-danger"></span>
+@if (Model.ExistingCertification is { } done)
+{
+    <div class="alert alert-info" style="max-width: 820px;">
+        <strong>@monthLabel is already certified</strong> (@done.Certification_ID, @done.Certified_Date.ToString("d MMM yyyy") by @done.CertifiedByName):
+        cash Sh. @done.Actual_Cash_On_Hand.ToString("N2"), bank Sh. @done.Actual_Bank_Balance.ToString("N2")@(done.Balances ? ", agreeing with the book." : " - see the notes in the history below.")
+        A month can only be certified once.
     </div>
-    <div class="col-md-6">
-        <label class="form-label">Actual Bank Balance (Sh.)</label>
-        <input asp-for="Input.Actual_Bank_Balance" type="number" step="0.01" class="form-control" />
-        <span asp-validation-for="Input.Actual_Bank_Balance" class="text-danger"></span>
+}
+else
+{
+<div class="card mb-4" style="max-width: 820px;">
+    <div class="card-header fw-semibold">Certify @monthLabel</div>
+    <div class="card-body">
+        <form method="post" asp-page="/Certification/Index" id="certForm" class="row g-3" data-submit-once>
+            <input type="hidden" asp-for="Input.Period_Year" />
+            <input type="hidden" asp-for="Input.Period_Month" />
+            <div class="col-md-6">
+                <label asp-for="Input.Actual_Cash_On_Hand" class="form-label">1. Cash counted (Sh.)</label>
+                <input asp-for="Input.Actual_Cash_On_Hand" type="number" step="0.01" class="form-control text-end actual" value="@(Model.Checked ? Model.Input.Actual_Cash_On_Hand.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture) : "")" required />
+                <span asp-validation-for="Input.Actual_Cash_On_Hand"></span>
+            </div>
+            <div class="col-md-6">
+                <label asp-for="Input.Actual_Bank_Balance" class="form-label">Bank statement balance (Sh.)</label>
+                <input asp-for="Input.Actual_Bank_Balance" type="number" step="0.01" class="form-control text-end actual" value="@(Model.Checked ? Model.Input.Actual_Bank_Balance.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture) : "")" required />
+                <span asp-validation-for="Input.Actual_Bank_Balance"></span>
+            </div>
+            <div class="col-12">
+                <button type="submit" asp-page-handler="Check" class="btn btn-outline-primary" id="checkBtn" formnovalidate>2. Check figures</button>
+                <span class="form-text ms-2">Compares your figures with the book. Nothing is saved.</span>
+            </div>
+
+            @if (Model.Checked)
+            {
+                <div class="col-12" id="checkResult">
+                    <table class="table table-sm align-middle mb-2">
+                        <thead class="table-light">
+                            <tr><th></th><th class="text-end">Book</th><th class="text-end">Actual</th><th class="text-end">Variance</th><th></th></tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var (label, book, actual, variance) in new[] {
+                                ("Cash in hand", Model.BookCashBalance, Model.Input.Actual_Cash_On_Hand, Model.CashVariance),
+                                ("Cash at bank", Model.BookBankBalance, Model.Input.Actual_Bank_Balance, Model.BankVariance) })
+                            {
+                                <tr class="@(variance == 0 ? "table-success" : "table-warning")">
+                                    <th>@label</th>
+                                    <td class="text-end">@book.ToString("N2")</td>
+                                    <td class="text-end">@actual.ToString("N2")</td>
+                                    <td class="text-end fw-semibold">@variance.ToString("+#,##0.00;-#,##0.00;0.00")</td>
+                                    <td class="small">@(variance == 0 ? "Agrees" : variance > 0 ? "more than the book" : "less than the book")</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                    @if (Model.Agrees)
+                    {
+                        <div class="text-success small mb-2">Both figures agree with the book.</div>
+                    }
+                    else
+                    {
+                        <div class="small mb-2">
+                            The figures don't agree. Check the list under <em>What could explain a variance</em> above. Either fix what's outstanding and
+                            check again, or certify with a note explaining the difference.
+                        </div>
+                    }
+                </div>
+
+                <div class="col-12" id="certifyPart">
+                    <label asp-for="Input.Notes" class="form-label">3. Notes @(Model.Agrees ? "(optional)" : "(required: explain the variance)")</label>
+                    <textarea asp-for="Input.Notes" class="form-control" rows="2" required="@(!Model.Agrees)"></textarea>
+                    <span asp-validation-for="Input.Notes"></span>
+                    <div class="mt-3">
+                        <button type="submit" class="btn btn-primary" id="certifyBtn"
+                                onclick="return confirm('Certify @monthLabel? This is final - a month can only be certified once.');">
+                            Certify @monthLabel
+                        </button>
+                    </div>
+                </div>
+                <div class="col-12 d-none" id="recheckNote">
+                    <div class="alert alert-warning py-2 mb-0">You've changed the figures since checking. Check them again before certifying.</div>
+                </div>
+            }
+        </form>
     </div>
-    <div class="col-12">
-        <label class="form-label">Notes (e.g. explanation for any variance)</label>
-        <textarea asp-for="Input.Notes" class="form-control" rows="2"></textarea>
-    </div>
-    <div class="col-12">
-        <div class="form-text mb-2">
-            This certifies <strong>@System.Globalization.CultureInfo.InvariantCulture.DateTimeFormat.GetMonthName(Model.Month) @Model.Year</strong>
-            &mdash; the period loaded above. Use "Load Period" first if that's not the month you mean to certify.
-        </div>
-        <button type="submit" class="btn btn-primary">
-            Certify @System.Globalization.CultureInfo.InvariantCulture.DateTimeFormat.GetMonthName(Model.Month) @Model.Year
-        </button>
-    </div>
-</form>
+</div>
+}
+
+<script>
+    // Certify is only offered for the figures that were checked: editing
+    // either amount hides it until "Check figures" is pressed again.
+    (function () {
+        var certify = document.getElementById('certifyPart');
+        if (!certify) return;
+        document.querySelectorAll('#certForm .actual').forEach(function (input) {
+            input.addEventListener('input', function () {
+                certify.classList.add('d-none');
+                document.getElementById('checkResult').classList.add('d-none');
+                document.getElementById('recheckNote').classList.remove('d-none');
+            });
+        });
+    })();
+</script>
 
 <h4 class="mt-4">Certification History</h4>
 @if (!Model.Certifications.Any())
@@ -179,7 +322,17 @@ else
                     <td>@(c.Balances ? "Yes" : "No - see notes")</td>
                     <td>@c.CertifiedByName</td>
                     <td>@c.Certified_Date.ToString("yyyy-MM-dd")</td>
-                    <td>@c.Notes</td>
+                    <td>
+                        @c.Notes
+                        @if (Model.CurrentBook.TryGetValue(c.Certification_ID, out var now)
+                             && (now.Cash != c.Book_Cash_Balance || now.Bank != c.Book_Bank_Balance))
+                        {
+                            <div class="badge bg-danger-subtle text-danger-emphasis text-wrap text-start mt-1"
+                                 title="Something dated in or before this month was entered or changed after it was certified.">
+                                Book now differs: cash @now.Cash.ToString("N2"), bank @now.Bank.ToString("N2")
+                            </div>
+                        }
+                    </td>
                 </tr>
             }
         </tbody>
