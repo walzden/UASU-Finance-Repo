@@ -344,3 +344,33 @@ public class ChangePasswordInputModel
     [Compare(nameof(NewPassword), ErrorMessage = "Passwords do not match.")]
     public string ConfirmPassword { get; set; } = string.Empty;
 }
+
+// A payment still waiting for its payee's acknowledgement, for the batch
+// list on Payments/Acknowledge (grouped by the withdrawal that funded it).
+public class AcknowledgementBacklogRow
+{
+    public string Payment_ID { get; set; } = string.Empty;
+    public DateTime Payment_Date { get; set; }
+    public string Payment_Mode { get; set; } = string.Empty;
+    public decimal Amount_Paid { get; set; }
+    public string? Reference_No { get; set; }
+
+    // Null when the payment covers vouchers for more than one payee.
+    public string? PayeeName { get; set; }
+    public int VoucherCount { get; set; }
+
+    // The earliest withdrawal that funded it; null if none did.
+    public string? Withdrawal_ID { get; set; }
+    public DateTime? Withdrawal_Date { get; set; }
+}
+
+// One ticked row of the batch, as posted back.
+public class AcknowledgementLineInput
+{
+    public string Payment_ID { get; set; } = string.Empty;
+    public bool Selected { get; set; }
+    public string? Acknowledged_By { get; set; }
+    public string? Method { get; set; }
+    public DateTime? Acknowledgement_Date { get; set; }
+    public string? Notes { get; set; }
+}

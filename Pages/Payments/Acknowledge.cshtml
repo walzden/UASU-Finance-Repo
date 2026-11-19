@@ -8,12 +8,174 @@
     <div class="alert @(Model.StatusIsError ? "alert-danger" : "alert-success")">@Model.StatusMessage</div>
 }
 
+@if (Model.Backlog.Any())
+{
+    var methods = new[] { "Signed Voucher", "M-Pesa Confirmation", "WhatsApp Confirmation", "SMS Confirmation", "Email Confirmation", "Verbal - Witnessed", "Other" };
+    var groups = Model.Backlog
+        .GroupBy(b => b.Withdrawal_ID ?? "")
+        .Select(g => new { Key = g.Key, Date = g.First().Withdrawal_Date, Rows = g.ToList() })
+        .ToList();
+    var i = 0;
+    var g = 0;
+
+    <p class="text-muted" style="max-width: 1100px;">
+        Every payment still waiting for its payee's acknowledgement, grouped by the withdrawal that funded it (oldest first).
+        <strong>Cash payments are ticked by default</strong> as signed for on the day the cash was handed over; M-Pesa payments are
+        listed with their transaction code - tick the ones the payee has confirmed. Check or edit any row, then log them together.
+    </p>
+
+    @if (!string.IsNullOrEmpty(Model.BatchError))
+    {
+        <div class="alert alert-danger" style="max-width: 1100px;">@Model.BatchError</div>
+    }
+
+    <form method="post" asp-page="/Payments/Acknowledge" asp-page-handler="Batch" id="ackBatch" data-submit-once style="max-width: 1100px;">
+        <div class="ack-list border rounded mb-3">
+            <table class="table table-sm align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th style="width:2rem;"></th>
+                        <th>Payment</th>
+                        <th>Paid</th>
+                        <th>Mode</th>
+                        <th class="text-end">Sh.</th>
+                        <th style="min-width:12rem;">Acknowledged by</th>
+                        <th style="min-width:11rem;">Method</th>
+                        <th style="width:9.5rem;">Date</th>
+                        <th style="min-width:10rem;">Notes</th>
+                    </tr>
+                </thead>
+                @foreach (var grp in groups)
+                {
+                    g++;
+                    <tbody class="ack-group">
+                        <tr class="ack-group-head">
+                            <td><input type="checkbox" class="form-check-input group-pick" title="Tick all in this group" /></td>
+                            <td colspan="8">
+                                <span class="fw-semibold">@(grp.Key == "" ? "Not from a withdrawal" : grp.Key)</span>
+                                @if (grp.Date is { } wd)
+                                {
+                                    <span class="text-muted small ms-2">withdrawn @wd.ToString("d MMM yyyy")</span>
+                                }
+                                <span class="text-muted small ms-2">&middot; @grp.Rows.Count payment@(grp.Rows.Count == 1 ? "" : "s") &middot; Sh. @grp.Rows.Sum(r => r.Amount_Paid).ToString("N2")</span>
+                            </td>
+                        </tr>
+                        @foreach (var r in grp.Rows)
+                        {
+                            Model.Posted.TryGetValue(r.Payment_ID, out var posted);
+                            var isCash = r.Payment_Mode == "Cash";
+                            var isMpesa = r.Payment_Mode == "M-PESA";
+                            var ticked = posted?.Selected ?? isCash;
+                            var by = posted?.Acknowledged_By ?? r.PayeeName ?? "";
+                            var method = posted?.Method ?? (isMpesa ? "M-Pesa Confirmation" : "Signed Voucher");
+                            var date = posted?.Acknowledgement_Date ?? r.Payment_Date;
+                            var notes = posted?.Notes ?? (isMpesa && !string.IsNullOrWhiteSpace(r.Reference_No) ? $"M-Pesa {r.Reference_No}" : "");
+                            <tr class="ack-row">
+                                <td>
+                                    <input type="hidden" name="Lines[@i].Payment_ID" value="@r.Payment_ID" />
+                                    <input type="checkbox" class="form-check-input pick" name="Lines[@i].Selected" value="true" id="ack-@i" checked="@ticked" />
+                                </td>
+                                <td class="text-nowrap"><label for="ack-@i" class="mb-0">@r.Payment_ID</label></td>
+                                <td class="text-nowrap small">@r.Payment_Date.ToString("d MMM")</td>
+                                <td class="small">@r.Payment_Mode</td>
+                                <td class="text-end">@r.Amount_Paid.ToString("N2")</td>
+                                <td>
+                                    <input name="Lines[@i].Acknowledged_By" value="@by" class="form-control form-control-sm" maxlength="150"
+                                           placeholder="@(r.PayeeName is null ? "Several payees - enter name" : "")" />
+                                </td>
+                                <td>
+                                    <select name="Lines[@i].Method" class="form-select form-select-sm">
+                                        @foreach (var m in methods)
+                                        {
+                                            <option value="@m" selected="@(m == method)">@m</option>
+                                        }
+                                    </select>
+                                </td>
+                                <td>
+                                    <input type="date" name="Lines[@i].Acknowledgement_Date" class="form-control form-control-sm"
+                                           value="@date.ToString("yyyy-MM-dd")" min="@r.Payment_Date.ToString("yyyy-MM-dd")" max="@DateTime.Today.ToString("yyyy-MM-dd")" />
+                                </td>
+                                <td><input name="Lines[@i].Notes" value="@notes" class="form-control form-control-sm" /></td>
+                            </tr>
+                            i++;
+                        }
+                    </tbody>
+                }
+            </table>
+        </div>
+        <div class="card border-primary mb-4">
+            <div class="card-body d-flex align-items-center flex-wrap gap-3">
+                <div><strong id="ackCount">0</strong> ticked &middot; Sh. <strong id="ackTotal">0.00</strong></div>
+                <button type="submit" class="btn btn-primary ms-auto" id="ackBtn">Log acknowledgements</button>
+            </div>
+        </div>
+    </form>
+
+    <style>
+        .ack-list { max-height: 34rem; overflow-y: auto; }
+        .ack-list thead th { position: sticky; top: 0; z-index: 2; }
+        .ack-group-head td { background: var(--bs-tertiary-bg, #f8f9fa); border-top: 2px solid var(--bs-border-color, #dee2e6); }
+        .ack-row.picked { background: rgba(13,110,253,0.06); }
+    </style>
+
+    <script>
+        (function () {
+            var form = document.getElementById('ackBatch');
+            var rows = Array.prototype.slice.call(form.querySelectorAll('.ack-row'));
+            var fmt = function (n) { return n.toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
+
+            function summary() {
+                var n = 0, total = 0;
+                rows.forEach(function (r) {
+                    var on = r.querySelector('.pick').checked;
+                    r.classList.toggle('picked', on);
+                    r.querySelector('[name$=".Acknowledged_By"]').required = on;
+                    if (on) { n++; total += parseFloat(r.cells[4].innerText.replace(/,/g, '')) || 0; }
+                });
+                document.querySelectorAll('.ack-group').forEach(function (grp) {
+                    var boxes = Array.prototype.slice.call(grp.querySelectorAll('.pick'));
+                    var k = boxes.filter(function (b) { return b.checked; }).length;
+                    var gp = grp.querySelector('.group-pick');
+                    gp.checked = k === boxes.length; gp.indeterminate = k > 0 && k < boxes.length;
+                });
+                document.getElementById('ackCount').textContent = n;
+                document.getElementById('ackTotal').textContent = fmt(total);
+                var btn = document.getElementById('ackBtn');
+                btn.textContent = 'Log ' + n + ' acknowledgement' + (n === 1 ? '' : 's');
+                btn.disabled = n === 0;
+                return n;
+            }
+
+            form.addEventListener('change', summary);
+            // Editing a row's details ticks it.
+            rows.forEach(function (r) {
+                r.querySelectorAll('input:not(.pick), select').forEach(function (el) {
+                    el.addEventListener('input', function () { r.querySelector('.pick').checked = true; summary(); });
+                });
+            });
+            document.querySelectorAll('.group-pick').forEach(function (gp) {
+                gp.addEventListener('change', function () {
+                    gp.closest('.ack-group').querySelectorAll('.pick').forEach(function (b) { b.checked = gp.checked; });
+                    summary();
+                });
+            });
+            form.addEventListener('submit', function (e) {
+                var n = summary();
+                if (!confirm('Log ' + n + ' acknowledgement' + (n === 1 ? '' : 's') + '?')) e.preventDefault();
+            });
+            summary();
+        })();
+    </script>
+}
+
 @if (!Model.AwaitingPayments.Any())
 {
     <p class="text-muted">No payments are waiting on an acknowledgement.</p>
 }
 else
 {
+    <details class="mb-4" style="max-width: 820px;">
+    <summary class="fw-semibold mb-2">Log one acknowledgement with an attachment (e.g. a WhatsApp screenshot)</summary>
     <form method="post" asp-page="/Payments/Acknowledge" enctype="multipart/form-data" class="row g-3" style="max-width: 820px;">
         <div class="col-12">
             <label class="form-label">Payment</label>
@@ -54,6 +216,7 @@ else
             <button type="submit" class="btn btn-primary">Log Acknowledgement</button>
         </div>
     </form>
+    </details>
 
     <script>
         // Purely a UX nicety - the field stays a plain editable text

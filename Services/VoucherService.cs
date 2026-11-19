@@ -33,6 +33,8 @@ public interface IVoucherService
 
     Task<IEnumerable<PaymentAcknowledgementOption>> GetPaymentsAwaitingAcknowledgementAsync();
     Task RecordAcknowledgementAsync(AcknowledgementInputModel input);
+    Task<IEnumerable<AcknowledgementBacklogRow>> GetAcknowledgementBacklogAsync();
+    Task<int> RecordAcknowledgementsAsync(IReadOnlyList<AcknowledgementLineInput> lines);
 
     Task<IEnumerable<AcknowledgementRow>> GetRecentAcknowledgementsAsync();
     Task<IEnumerable<AcknowledgementRow>> GetAllAcknowledgementsAsync();
@@ -813,6 +815,111 @@ public class VoucherService : IVoucherService
             GROUP BY p.Payment_ID, p.Payment_Date, p.Amount_Paid, p.Payment_Mode
             ORDER BY p.Payment_Date;";
         return await conn.QueryAsync<PaymentAcknowledgementOption>(sql);
+    }
+
+    // Every payment still waiting on an acknowledgement
+    // (PaymentsAwaitingAcknowledgement), with its payee and the earliest
+    // withdrawal that funded it - the page groups by that withdrawal,
+    // oldest first.
+    public async Task<IEnumerable<AcknowledgementBacklogRow>> GetAcknowledgementBacklogAsync()
+    {
+        using var conn = _db.CreateConnection();
+
+        const string sql = @"
+            SELECT a.Payment_ID, a.Payment_Date, a.Payment_Mode, a.Amount_Paid, p.Reference_No,
+                   CASE WHEN payee.Names = 1 THEN payee.Name END AS PayeeName,
+                   payee.Vouchers AS VoucherCount,
+                   wd.Withdrawal_ID, wd.Withdrawal_Date
+            FROM PaymentsAwaitingAcknowledgement a
+            INNER JOIN Payments p ON p.Payment_ID = a.Payment_ID
+            OUTER APPLY (
+                SELECT COUNT(DISTINCT COALESCE(o.FullName, s.Business_Name, v.Manual_Payee_Name)) AS Names,
+                       MIN(COALESCE(o.FullName, s.Business_Name, v.Manual_Payee_Name)) AS Name,
+                       COUNT(*) AS Vouchers
+                FROM PaymentAllocations al
+                INNER JOIN Vouchers v ON v.Voucher_ID = al.Voucher_ID
+                LEFT JOIN Ref_Officials o ON o.OfficialID = v.Official_Link
+                LEFT JOIN Ref_Suppliers s ON s.Supplier_ID = v.Supplier_Link
+                WHERE al.Payment_ID = a.Payment_ID
+            ) payee
+            OUTER APPLY (
+                SELECT TOP 1 w.Withdrawal_ID, w.Withdrawal_Date
+                FROM WithdrawalPayments wp
+                INNER JOIN BankWithdrawals w ON w.Withdrawal_ID = wp.Withdrawal_ID
+                WHERE wp.Payment_ID = a.Payment_ID
+                ORDER BY w.Withdrawal_Date, w.Withdrawal_ID
+            ) wd
+            ORDER BY CASE WHEN wd.Withdrawal_Date IS NULL THEN 1 ELSE 0 END, wd.Withdrawal_Date, wd.Withdrawal_ID,
+                     PayeeName, a.Payment_Date, a.Payment_ID;";
+
+        return await conn.QueryAsync<AcknowledgementBacklogRow>(sql);
+    }
+
+    private static readonly HashSet<string> AcknowledgementMethods = new()
+    {
+        "Signed Voucher", "WhatsApp Confirmation", "M-Pesa Confirmation", "SMS Confirmation",
+        "Email Confirmation", "Verbal - Witnessed", "Other"
+    };
+
+    // Logs several acknowledgements at once, all or nothing. Each line is
+    // checked first - who acknowledged, a known method, a date that is
+    // neither in the future nor before the payment - and the whole batch
+    // is refused with every problem listed, so nothing half-saves. A
+    // payment acknowledged meanwhile by someone else fails on the
+    // primary key and rolls the batch back too.
+    public async Task<int> RecordAcknowledgementsAsync(IReadOnlyList<AcknowledgementLineInput> lines)
+    {
+        using var conn = (SqlConnection)_db.CreateConnection();
+        conn.Open();
+
+        var paymentDates = (await conn.QueryAsync<(string Id, DateTime Date)>(
+                "SELECT Payment_ID, Payment_Date FROM Payments WHERE Payment_ID IN @Ids;",
+                new { Ids = lines.Select(l => l.Payment_ID).ToList() }))
+            .ToDictionary(p => p.Id, p => p.Date);
+
+        var problems = new List<string>();
+        foreach (var l in lines)
+        {
+            if (!paymentDates.TryGetValue(l.Payment_ID, out var paid))
+                problems.Add($"{l.Payment_ID}: payment not found");
+            else if (l.Acknowledgement_Date is { } d && (d.Date > DateTime.Today || d.Date < paid.Date))
+                problems.Add($"{l.Payment_ID}: date must be between {paid:d MMM yyyy} (paid) and today");
+            if (string.IsNullOrWhiteSpace(l.Acknowledged_By))
+                problems.Add($"{l.Payment_ID}: enter who acknowledged it");
+            if (l.Method is null || !AcknowledgementMethods.Contains(l.Method))
+                problems.Add($"{l.Payment_ID}: choose a method");
+        }
+        if (problems.Count > 0)
+            throw new InvalidOperationException("Nothing was logged. " + string.Join("; ", problems) + ".");
+
+        using var transaction = conn.BeginTransaction();
+        const string sql = @"
+            INSERT INTO Payment_Acknowledgements (Payment_ID, Acknowledged_By, Acknowledgement_Date, Method, Notes)
+            VALUES (@Payment_ID, @By, @AckDate, @Method, @Notes);";
+        try
+        {
+            foreach (var l in lines)
+                await conn.ExecuteAsync(sql, new
+                {
+                    l.Payment_ID,
+                    By = l.Acknowledged_By!.Trim(),
+                    AckDate = (l.Acknowledgement_Date ?? DateTime.Today).Date,
+                    l.Method,
+                    Notes = string.IsNullOrWhiteSpace(l.Notes) ? null : l.Notes.Trim()
+                }, transaction);
+            transaction.Commit();
+            return lines.Count;
+        }
+        catch (SqlException ex) when (ex.Number is 2627 or 2601)
+        {
+            transaction.Rollback();
+            throw new InvalidOperationException("Nothing was logged: one of the ticked payments was acknowledged in the meantime. Reload the page and try again.");
+        }
+        catch
+        {
+            transaction.Rollback();
+            throw;
+        }
     }
 
     public async Task RecordAcknowledgementAsync(AcknowledgementInputModel input)

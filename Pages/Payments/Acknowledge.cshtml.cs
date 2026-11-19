@@ -33,15 +33,57 @@ public class AcknowledgeModel : PageModel
     [TempData]
     public bool StatusIsError { get; set; }
 
+    // ---- Batch: everything waiting, grouped by withdrawal ----
+
+    public List<AcknowledgementBacklogRow> Backlog { get; set; } = new();
+
+    [BindProperty]
+    public List<AcknowledgementLineInput> Lines { get; set; } = new();
+
+    // Shown when a batch is refused; the ticks and edits are kept
+    // (Posted) so nothing has to be re-entered.
+    public string? BatchError { get; set; }
+    public Dictionary<string, AcknowledgementLineInput> Posted { get; private set; } = new();
+
     public async Task OnGetAsync()
     {
         AwaitingPayments = await _voucherService.GetPaymentsAwaitingAcknowledgementAsync();
         RecentAcknowledgements = await _voucherService.GetRecentAcknowledgementsAsync();
+        Backlog = (await _voucherService.GetAcknowledgementBacklogAsync()).ToList();
+    }
+
+    public async Task<IActionResult> OnPostBatchAsync()
+    {
+        Backlog = (await _voucherService.GetAcknowledgementBacklogAsync()).ToList();
+
+        // Only payments still waiting can be acknowledged from here.
+        var waiting = Backlog.Select(b => b.Payment_ID).ToHashSet();
+        var ticked = Lines.Where(l => l.Selected && waiting.Contains(l.Payment_ID)).ToList();
+
+        try
+        {
+            if (ticked.Count == 0)
+                throw new InvalidOperationException("Tick at least one payment to acknowledge.");
+
+            var n = await _voucherService.RecordAcknowledgementsAsync(ticked);
+            StatusMessage = $"{n} acknowledgement{(n == 1 ? "" : "s")} logged.";
+            return LocalRedirect(Url.Content("~/Payments/Acknowledge"));
+        }
+        catch (InvalidOperationException ex)
+        {
+            BatchError = ex.Message;
+            Posted = Lines.Where(l => !string.IsNullOrEmpty(l.Payment_ID))
+                          .GroupBy(l => l.Payment_ID).ToDictionary(g => g.Key, g => g.First());
+            AwaitingPayments = await _voucherService.GetPaymentsAwaitingAcknowledgementAsync();
+            RecentAcknowledgements = await _voucherService.GetRecentAcknowledgementsAsync();
+            return Page();
+        }
     }
 
     public async Task<IActionResult> OnPostAsync()
     {
         AwaitingPayments = await _voucherService.GetPaymentsAwaitingAcknowledgementAsync();
+        Backlog = (await _voucherService.GetAcknowledgementBacklogAsync()).ToList();
 
         if (!ModelState.IsValid)
         {
