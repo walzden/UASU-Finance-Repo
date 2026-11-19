@@ -53,9 +53,19 @@
     </div>
 </form>
 
+@if (Model.ReadyCount > 0)
+{
+    <div class="mb-2" style="max-width: 900px;">
+        <span class="text-muted small">Tick the officials to pay this time; only they get a voucher.</span>
+        <button type="button" class="btn btn-sm btn-link" id="tickAll">Tick all</button> |
+        <button type="button" class="btn btn-sm btn-link" id="tickNone">Untick all</button>
+    </div>
+}
+
 <table class="table table-sm align-middle" style="max-width: 900px;">
     <thead>
         <tr>
+            <th style="width:2rem;"></th>
             <th>Official</th>
             <th>Position</th>
             <th class="text-end">Amount (KES)</th>
@@ -66,13 +76,21 @@
         @foreach (var p in Model.Preview)
         {
             <tr class="@(p.Status == "Ready" ? "" : "text-muted")">
+                <td>
+                    @if (p.Status == "Ready")
+                    {
+                        <input type="checkbox" class="form-check-input pick" form="generateForm" name="SelectedOfficials"
+                               value="@p.OfficialID" data-amount="@((p.Amount ?? 0).ToString("0.00", CultureInfo.InvariantCulture))" checked
+                               aria-label="Generate a voucher for @p.FullName" />
+                    }
+                </td>
                 <td>@p.FullName</td>
                 <td>@p.Role</td>
                 <td class="text-end">@(p.Amount?.ToString("N2") ?? "-")</td>
                 <td>
                     @if (p.Status == "Ready")
                     {
-                        <span class="badge bg-success">Will be created</span>
+                        <span class="badge bg-success ready-badge">Will be created</span>
                     }
                     else if (p.Status == "AlreadyGenerated")
                     {
@@ -88,8 +106,9 @@
     </tbody>
     <tfoot>
         <tr>
-            <th colspan="2">To be created: @Model.ReadyCount</th>
-            <th class="text-end">@Model.ReadyTotal.ToString("N2")</th>
+            <th></th>
+            <th colspan="2">To be created: <span id="pickCount">@Model.ReadyCount</span></th>
+            <th class="text-end" id="pickTotal">@Model.ReadyTotal.ToString("N2")</th>
             <th></th>
         </tr>
     </tfoot>
@@ -97,17 +116,51 @@
 
 @if (Model.ReadyCount > 0)
 {
-    <form method="post">
+    <form method="post" id="generateForm" data-submit-once>
         <input type="hidden" name="Month" value="@Model.Month" />
         <input type="hidden" name="Year" value="@Model.Year" />
         <input type="hidden" name="VoucherDate" value="@((Model.VoucherDate ?? DateTime.Today).ToString("yyyy-MM-dd"))" />
         <input type="hidden" name="Budget_Link" value="@Model.Budget_Link" />
         <input type="hidden" name="CustomDescription" value="@Model.CustomDescription" />
-        <button type="submit" class="btn btn-primary"
-                onclick="return confirm('Create @Model.ReadyCount voucher(s) totalling KES @Model.ReadyTotal.ToString("N2")?');">
-            Generate @Model.ReadyCount voucher(s)
-        </button>
+        <button type="submit" class="btn btn-primary" id="generateBtn">Generate @Model.ReadyCount voucher(s)</button>
     </form>
+
+    <script>
+        (function () {
+            var picks = Array.prototype.slice.call(document.querySelectorAll('.pick'));
+            var btn = document.getElementById('generateBtn');
+            var fmt = function (n) { return n.toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
+
+            function summary() {
+                var ticked = picks.filter(function (p) { return p.checked; });
+                var total = ticked.reduce(function (s, p) { return s + parseFloat(p.dataset.amount); }, 0);
+                document.getElementById('pickCount').textContent = ticked.length;
+                document.getElementById('pickTotal').textContent = fmt(total);
+                btn.textContent = 'Generate ' + ticked.length + ' voucher' + (ticked.length === 1 ? '' : 's');
+                btn.disabled = ticked.length === 0;
+                // Unticked rows read as "won't be created" at a glance.
+                picks.forEach(function (p) {
+                    var row = p.closest('tr');
+                    row.classList.toggle('text-muted', !p.checked);
+                    var badge = row.querySelector('.ready-badge');
+                    badge.textContent = p.checked ? 'Will be created' : 'Skipped this time';
+                    badge.className = 'badge ready-badge ' + (p.checked ? 'bg-success' : 'bg-light text-dark border');
+                });
+                return { count: ticked.length, total: total };
+            }
+
+            picks.forEach(function (p) { p.addEventListener('change', summary); });
+            document.getElementById('tickAll').addEventListener('click', function () { picks.forEach(function (p) { p.checked = true; }); summary(); });
+            document.getElementById('tickNone').addEventListener('click', function () { picks.forEach(function (p) { p.checked = false; }); summary(); });
+
+            document.getElementById('generateForm').addEventListener('submit', function (e) {
+                var s = summary();
+                if (!confirm('Create ' + s.count + ' voucher(s) totalling KES ' + fmt(s.total) + '?')) e.preventDefault();
+            });
+
+            summary();
+        })();
+    </script>
 }
 else
 {

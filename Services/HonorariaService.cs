@@ -12,7 +12,8 @@ public interface IHonorariaService
     Task DeleteRateAsync(string role);
 
     Task<IEnumerable<HonorariaPreviewRow>> GetPreviewAsync(string description);
-    Task<IReadOnlyList<string>> GenerateAsync(string description, DateTime voucherDate, string budgetLink);
+    Task<IReadOnlyList<string>> GenerateAsync(string description, DateTime voucherDate, string budgetLink,
+        IReadOnlyCollection<string> officialIds);
 }
 
 public class HonorariaService : IHonorariaService
@@ -82,7 +83,8 @@ public class HonorariaService : IHonorariaService
     // half-generated month behind. The Ready set is recomputed here
     // rather than taken from the page, so amounts can never be tampered
     // with from the form.
-    public async Task<IReadOnlyList<string>> GenerateAsync(string description, DateTime voucherDate, string budgetLink)
+    public async Task<IReadOnlyList<string>> GenerateAsync(string description, DateTime voucherDate, string budgetLink,
+        IReadOnlyCollection<string> officialIds)
     {
         using var conn = (SqlConnection)_db.CreateConnection();
         conn.Open();
@@ -94,6 +96,15 @@ public class HonorariaService : IHonorariaService
                     PreviewSql, new { Description = description }, transaction))
                 .Where(r => r.Status == "Ready")
                 .ToList();
+
+            // Only the officials ticked on the page - and each must still be
+            // Ready now (has a rate, no live voucher with this description),
+            // so a stale page can never create one twice. All or nothing.
+            var notReady = officialIds.Except(ready.Select(r => r.OfficialID)).ToList();
+            if (notReady.Count > 0)
+                throw new InvalidOperationException(
+                    "Some ticked officials can no longer be generated (no rate, or a voucher with this description already exists). Reload the preview and try again.");
+            ready = ready.Where(r => officialIds.Contains(r.OfficialID)).ToList();
 
             // OUTPUT goes INTO a table variable: Vouchers has an INSERT
             // trigger (SQL/035), which rules out a bare OUTPUT clause.

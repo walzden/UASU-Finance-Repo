@@ -36,6 +36,10 @@ public class GenerateModel : PageModel
     [BindProperty(SupportsGet = true)]
     public DateTime? VoucherDate { get; set; }
 
+    // The officials ticked in the preview - only they get a voucher.
+    [BindProperty]
+    public List<string> SelectedOfficials { get; set; } = new();
+
     public IEnumerable<SimpleOption> BudgetCodes { get; set; } = Enumerable.Empty<SimpleOption>();
     public List<HonorariaPreviewRow> Preview { get; set; } = new();
 
@@ -75,10 +79,17 @@ public class GenerateModel : PageModel
             return Page();
         }
 
+        if (SelectedOfficials.Count == 0)
+        {
+            StatusIsError = true;
+            StatusMessage = "Tick at least one official to generate a voucher for.";
+            return Page();
+        }
+
         try
         {
             var ids = await _honorariaService.GenerateAsync(
-                EffectiveDescription, VoucherDate ?? DateTime.Today, Budget_Link);
+                EffectiveDescription, VoucherDate ?? DateTime.Today, Budget_Link, SelectedOfficials);
             StatusMessage =
                 $"Created {ids.Count} voucher(s) for \"{EffectiveDescription}\" ({ids.First()} to {ids.Last()}). They now await approval under Pending Vouchers.";
             return RedirectToPage(new
@@ -90,7 +101,7 @@ public class GenerateModel : PageModel
                 VoucherDate = (VoucherDate ?? DateTime.Today).ToString("yyyy-MM-dd")
             });
         }
-        catch (SqlException ex)
+        catch (Exception ex) when (ex is SqlException or InvalidOperationException)
         {
             StatusIsError = true;
             StatusMessage = ex.Message;
