@@ -12,6 +12,24 @@
         justify-content: center;
     }
 
+    /* Recipient / Date signing lines: side by side, at the bottom of a
+       box as tall as the stamps, leaving room above each line to sign. */
+    .formr-sign {
+        min-height: 92px;
+        display: flex;
+        align-items: flex-end;
+        gap: 1.5rem;
+        padding: 0 .5rem .25rem;
+    }
+    .formr-sign-field {
+        flex: 1 1 0;
+        text-align: center;
+    }
+    .formr-sign-line {
+        border-top: 1px solid #000;
+        margin-bottom: .2rem;
+    }
+
     @@media print {
         table { font-size: 11px; }
         /* Explicit class, set only on non-last items in the loop below -
@@ -223,12 +241,19 @@
                     }
                     else
                     {
-                        <div class="formr-stamp row text-center align-items-end">
-                            <div class="col-6">
-                                <div style="border-top:1px solid #000;">Recipient</div>
+                        @* Signing space for the recipient: two lines side by side,
+                           each with its label under it, sitting at the bottom of a
+                           box the same height as the stamps beside it. Not
+                           .formr-stamp - that stacks its children in a column,
+                           which is what made these overlap. *@
+                        <div class="formr-sign">
+                            <div class="formr-sign-field">
+                                <div class="formr-sign-line"></div>
+                                <div class="small">Recipient</div>
                             </div>
-                            <div class="col-6">
-                                <div style="border-top:1px solid #000;">Date</div>
+                            <div class="formr-sign-field">
+                                <div class="formr-sign-line"></div>
+                                <div class="small">Date</div>
                             </div>
                         </div>
                     }
