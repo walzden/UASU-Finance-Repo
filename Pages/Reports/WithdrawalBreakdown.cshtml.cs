@@ -113,7 +113,8 @@ public class WithdrawalBreakdownModel : PageModel
             if (withdrawalIds.Count <= 1)
             {
                 foreach (var withdrawalId in withdrawalIds)
-                    result[(withdrawalId, paymentId)] = paymentVouchers;
+                    result[(withdrawalId, paymentId)] = ShareFundedByWithdrawal(
+                        paymentVouchers, paymentLinks.Sum(l => l.Allocated_Amount));
                 continue;
             }
 
@@ -142,6 +143,49 @@ public class WithdrawalBreakdownModel : PageModel
         }
 
         return (result, unattributed);
+    }
+
+    // A payment funded by one withdrawal is usually funded by it in full,
+    // and its vouchers are reported at their full amounts. But a payment
+    // can be only partly funded by its withdrawal - e.g. PAY-2026-0148:
+    // Sh. 2,500 paid, Sh. 1,301 from WIT-006 and the rest from an
+    // official's advance. Reporting the full 2,500 under WIT-006 overstated
+    // its Form R total by the 1,199 it didn't fund. Here the vouchers are
+    // scaled down to what the withdrawal actually funded, pro rata, with
+    // the last one taking any rounding cent, so the withdrawal's lines add
+    // up to exactly its funding.
+    private static List<WithdrawalPaymentVoucherRow> ShareFundedByWithdrawal(
+        List<WithdrawalPaymentVoucherRow> vouchers, decimal funded)
+    {
+        var total = vouchers.Sum(v => v.AllocatedFromThisPayment);
+        if (total <= funded || total == 0)
+            return vouchers;
+
+        var scaled = new List<WithdrawalPaymentVoucherRow>();
+        var remaining = funded;
+        for (var i = 0; i < vouchers.Count; i++)
+        {
+            var v = vouchers[i];
+            var share = i == vouchers.Count - 1
+                ? remaining
+                : Math.Round(v.AllocatedFromThisPayment * funded / total, 2);
+            remaining -= share;
+
+            scaled.Add(new WithdrawalPaymentVoucherRow
+            {
+                Payment_ID = v.Payment_ID,
+                Voucher_ID = v.Voucher_ID,
+                VoucherDate = v.VoucherDate,
+                PayeeDisplay = v.PayeeDisplay,
+                Description = v.Description,
+                VoucherAmount = v.VoucherAmount,
+                AllocatedFromThisPayment = share,
+                Budget_ID = v.Budget_ID,
+                Category_Name = v.Category_Name,
+                Is_Legacy = v.Is_Legacy
+            });
+        }
+        return scaled;
     }
 
     public record WithdrawalDetailRow(
