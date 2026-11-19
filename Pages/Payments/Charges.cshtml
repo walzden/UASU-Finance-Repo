@@ -1,55 +1,169 @@
 @page
+@using System.Globalization
 @model UASU_VoucherApprovals.Pages.Payments.ChargesModel
 
-<h3 class="mb-3">Log a Payment Charge</h3>
-<p class="text-muted">
-    For the M-PESA transaction charge on a payment. The dropdown only lists M-Pesa payments that don't
-    already have a charge logged. If it came from cash drawn via a specific withdrawal, select that
-    withdrawal too — but only a withdrawal that actually funded the chosen payment will be accepted.
+<h3 class="mb-3">Log Payment Charges</h3>
+<p class="text-muted" style="max-width: 900px;">
+    For the M-PESA transaction charge on payments. Choose the withdrawal that funded them, then tick the
+    payments to charge and check each fee. Only M-Pesa payments that don't already have a charge are listed.
 </p>
 
 @if (!string.IsNullOrEmpty(Model.StatusMessage))
 {
-    <div class="alert @(Model.StatusIsError ? "alert-danger" : "alert-success")">@Model.StatusMessage</div>
+    <div class="alert @(Model.StatusIsError ? "alert-danger" : "alert-success")" style="max-width: 900px;">@Model.StatusMessage</div>
 }
 
-<form method="post" asp-page="/Payments/Charges" class="row g-3" style="max-width: 640px;">
-    <div class="col-12">
-        <label class="form-label">Payment</label>
-        <select asp-for="Input.Payment_ID" class="form-select">
-            @foreach (var p in Model.Payments)
-            {
-                <option value="@p.Id">@p.Label</option>
-            }
-        </select>
-    </div>
-    <div class="col-12">
-        <label class="form-label">Funded by Withdrawal (optional)</label>
-        <select asp-for="Input.Withdrawal_ID" class="form-select">
-            <option value="">-- not from a withdrawal --</option>
-            @foreach (var w in Model.Withdrawals)
-            {
-                <option value="@w.Id">@w.Label</option>
-            }
-        </select>
-    </div>
-    <div class="col-md-6">
-        <label class="form-label">Charge Type</label>
-        <select asp-for="Input.Charge_Type" class="form-select">
-            <option>Bank Fee</option>
-            <option>M-PESA Fee</option>
-            <option>Other</option>
-        </select>
-    </div>
-    <div class="col-md-6">
-        <label class="form-label">Amount (Sh.)</label>
-        <input asp-for="Input.Charge_Amount" type="number" step="0.01" class="form-control" />
-    </div>
-    <div class="col-12">
-        <label class="form-label">Notes</label>
-        <textarea asp-for="Input.Notes" class="form-control" rows="2"></textarea>
-    </div>
-    <div class="col-12">
-        <button type="submit" class="btn btn-primary">Log Charge</button>
-    </div>
+@* Changing the withdrawal reloads the list for it (a plain GET). *@
+<form method="get" class="mb-3" style="max-width: 900px;">
+    <label for="withdrawalPick" class="form-label fw-semibold">1. Funded by withdrawal</label>
+    <select id="withdrawalPick" name="withdrawal" class="form-select" onchange="this.form.submit()">
+        <option value="" selected="@string.IsNullOrEmpty(Model.WithdrawalId)">-- not from a withdrawal (paid straight from the account) --</option>
+        @foreach (var w in Model.Withdrawals)
+        {
+            <option value="@w.Id" selected="@(Model.WithdrawalId == w.Id)">@w.Label</option>
+        }
+    </select>
+    <noscript><button type="submit" class="btn btn-outline-secondary btn-sm mt-2">Show payments</button></noscript>
 </form>
+
+<form method="post" id="chargesForm" data-submit-once style="max-width: 900px;">
+    <input type="hidden" name="withdrawal" value="@Model.WithdrawalId" />
+
+    <div class="d-flex align-items-baseline justify-content-between flex-wrap gap-2 mb-1">
+        <label class="form-label fw-semibold mb-0">2. Tick the payments to charge</label>
+        @if (Model.Payments.Any())
+        {
+            <span class="small">
+                <button type="button" class="btn btn-sm btn-link px-0" id="tickAll">Tick all</button> |
+                <button type="button" class="btn btn-sm btn-link px-0" id="tickNone">Untick all</button>
+            </span>
+        }
+    </div>
+
+    @if (!Model.Payments.Any())
+    {
+        <p class="text-muted border rounded p-3">
+            No M-Pesa payments left to charge @(string.IsNullOrEmpty(Model.WithdrawalId) ? "outside a withdrawal" : $"under {Model.WithdrawalId}").
+        </p>
+    }
+    else
+    {
+        <div class="charge-list border rounded mb-3">
+            <table class="table table-sm table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th style="width:2rem;"></th>
+                        <th>Payment</th>
+                        <th>Date</th>
+                        <th>Payee</th>
+                        <th class="text-end">Amount (Sh.)</th>
+                        <th>M-Pesa ref.</th>
+                        <th class="text-end" style="width:8rem;">Fee (Sh.)</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @for (var i = 0; i < Model.Payments.Count; i++)
+                    {
+                        var p = Model.Payments[i];
+                        Model.Posted.TryGetValue(p.Payment_ID, out var posted);
+                        var isTicked = posted?.Selected ?? false;
+                        var fee = posted?.Amount ?? p.SuggestedFee;
+                        <tr class="charge-row">
+                            <td>
+                                <input type="hidden" name="Lines[@i].Payment_ID" value="@p.Payment_ID" />
+                                <input type="checkbox" class="form-check-input pick" name="Lines[@i].Selected" value="true"
+                                       id="pick-@i" checked="@isTicked" />
+                            </td>
+                            <td class="text-nowrap"><label for="pick-@i" class="mb-0">@p.Payment_ID</label></td>
+                            <td class="text-nowrap">@p.Payment_Date.ToString("yyyy-MM-dd")</td>
+                            <td>
+                                @p.PayeeDisplay
+                                @if (p.VoucherCount > 1) { <span class="text-muted small">(@p.VoucherCount vouchers)</span> }
+                            </td>
+                            <td class="text-end">@p.Amount_Paid.ToString("N2")</td>
+                            <td class="small">@p.Reference_No</td>
+                            <td>
+                                <input type="number" step="0.01" min="0.01" class="form-control form-control-sm text-end fee"
+                                       name="Lines[@i].Amount" value="@(fee?.ToString("0.00", CultureInfo.InvariantCulture))"
+                                       title="@(p.SuggestedFee is null ? "No earlier fee for this amount - enter it from the M-Pesa statement" : "Last fee logged for a Sh. " + p.Amount_Paid.ToString("N0") + " payment - check against the statement")" />
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+        <div class="form-text mb-3">
+            Fees start as the last fee logged for a payment of the same amount (blank if there isn't one). Check them against the M-Pesa statement.
+        </div>
+
+        <div class="row g-3 mb-3">
+            <div class="col-md-4">
+                <label for="chargeType" class="form-label">Charge type</label>
+                <select id="chargeType" name="Charge_Type" class="form-select">
+                    @foreach (var t in new[] { "M-PESA Fee", "Bank Fee", "Other" })
+                    {
+                        <option value="@t" selected="@(Model.Charge_Type == t)">@t</option>
+                    }
+                </select>
+            </div>
+            <div class="col-md-8">
+                <label for="notes" class="form-label">Notes <span class="text-muted small">(optional, applies to every charge)</span></label>
+                <input id="notes" name="Notes" class="form-control" value="@Model.Notes" />
+            </div>
+        </div>
+
+        <div class="card border-primary">
+            <div class="card-body d-flex align-items-center flex-wrap gap-3">
+                <div><strong id="pickCount">0</strong> payments ticked &middot; fees <strong>Sh. <span id="pickTotal">0.00</span></strong></div>
+                <button type="submit" class="btn btn-primary ms-auto" id="saveBtn">Log charges</button>
+            </div>
+        </div>
+    }
+</form>
+
+<style>
+    .charge-list { max-height: 26rem; overflow-y: auto; }
+    .charge-list thead th { position: sticky; top: 0; z-index: 1; }
+    .charge-row.picked { background: rgba(13,110,253,0.07); }
+</style>
+
+<script>
+    (function () {
+        var form = document.getElementById('chargesForm');
+        var rows = Array.prototype.slice.call(document.querySelectorAll('.charge-row'));
+        if (!rows.length) return;
+        var fmt = function (n) { return n.toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
+
+        function summary() {
+            var n = 0, total = 0;
+            rows.forEach(function (r) {
+                var pick = r.querySelector('.pick'), fee = r.querySelector('.fee');
+                r.classList.toggle('picked', pick.checked);
+                fee.required = pick.checked;            // a ticked payment needs a fee
+                if (pick.checked) { n++; total += parseFloat(fee.value) || 0; }
+            });
+            document.getElementById('pickCount').textContent = n;
+            document.getElementById('pickTotal').textContent = fmt(total);
+            var btn = document.getElementById('saveBtn');
+            btn.textContent = n <= 1 ? 'Log charge' : 'Log ' + n + ' charges';
+            btn.disabled = n === 0;
+            return { n: n, total: total };
+        }
+
+        form.addEventListener('input', summary);
+        form.addEventListener('change', summary);
+        // Typing a fee ticks its payment.
+        rows.forEach(function (r) {
+            r.querySelector('.fee').addEventListener('input', function () { r.querySelector('.pick').checked = true; summary(); });
+        });
+        document.getElementById('tickAll').addEventListener('click', function () { rows.forEach(function (r) { r.querySelector('.pick').checked = true; }); summary(); });
+        document.getElementById('tickNone').addEventListener('click', function () { rows.forEach(function (r) { r.querySelector('.pick').checked = false; }); summary(); });
+
+        form.addEventListener('submit', function (e) {
+            var s = summary();
+            if (!confirm('Log ' + s.n + ' charge' + (s.n === 1 ? '' : 's') + ' totalling Sh. ' + fmt(s.total) + '?')) e.preventDefault();
+        });
+
+        summary();
+    })();
+</script>

@@ -7,6 +7,10 @@ using UASU_VoucherApprovals.Services;
 
 namespace UASU_VoucherApprovals.Pages.Payments;
 
+// Log M-Pesa (or other) charges against payments: pick the withdrawal
+// that funded them, then tick the payments from a list showing the payee,
+// each with its own fee. One charge row per ticked payment, as before -
+// trg_PaymentCharges_ValidateWithdrawal still checks each one.
 [Authorize(Policy = "TreasuryAdmin")]
 public class ChargesModel : PageModel
 {
@@ -17,65 +21,94 @@ public class ChargesModel : PageModel
         _bankingService = bankingService;
     }
 
+    // Which withdrawal's payments are listed. Blank = payments not funded
+    // from any withdrawal.
+    [BindProperty(SupportsGet = true, Name = "withdrawal")]
+    public string? WithdrawalId { get; set; }
+
     [BindProperty]
-    public PaymentChargeInputModel Input { get; set; } = new();
+    public string Charge_Type { get; set; } = "M-PESA Fee"; // Bank Fee | M-PESA Fee | Other (CK_PaymentCharges_ChargeType)
 
-    public IEnumerable<SimpleOption> Payments { get; set; } = Enumerable.Empty<SimpleOption>();
+    [BindProperty]
+    public string? Notes { get; set; }
+
+    [BindProperty]
+    public List<ChargeLineInput> Lines { get; set; } = new();
+
     public IEnumerable<SimpleOption> Withdrawals { get; set; } = Enumerable.Empty<SimpleOption>();
+    public List<ChargeablePaymentRow> Payments { get; set; } = new();
 
-    // TempData, not a plain property - a successful charge redirects
-    // back to this same page (so the Payments dropdown reloads without
-    // the just-charged payment still listed), and a plain property
-    // wouldn't survive that redirect to the fresh GET request.
-    [TempData]
     public string? StatusMessage { get; set; }
-    [TempData]
     public bool StatusIsError { get; set; }
+
+    // Set just before the post-save redirect and shown once by OnGetAsync;
+    // the fresh GET then lists only payments still without a charge.
+    private const string SavedMessageKey = "ChargesSaved";
 
     public async Task OnGetAsync()
     {
-        await LoadDropdownsAsync();
+        StatusMessage = TempData[SavedMessageKey] as string;
+        await LoadAsync();
     }
 
     public async Task<IActionResult> OnPostAsync()
     {
-        await LoadDropdownsAsync();
+        await LoadAsync();
 
-        if (string.IsNullOrWhiteSpace(Input.Withdrawal_ID))
-            Input.Withdrawal_ID = null;
+        // Only payments still listed for this withdrawal can be charged -
+        // a stale or altered form can't add anything else.
+        var listed = Payments.Select(p => p.Payment_ID).ToHashSet();
+        var ticked = Lines.Where(l => l.Selected && listed.Contains(l.Payment_ID)).ToList();
 
-        if (!ModelState.IsValid)
+        string? error = null;
+        if (ticked.Count == 0)
+            error = "Tick at least one payment.";
+        else if (ticked.Any(l => l.Amount is null or <= 0))
+            error = "Enter a fee greater than zero for every ticked payment: "
+                    + string.Join(", ", ticked.Where(l => l.Amount is null or <= 0).Select(l => l.Payment_ID)) + ".";
+        else if (Charge_Type is not ("Bank Fee" or "M-PESA Fee" or "Other"))
+            error = "Choose a charge type.";
+
+        if (error is not null)
+        {
+            StatusIsError = true;
+            StatusMessage = error;
+            KeepPostedLines();
             return Page();
+        }
 
         try
         {
-            var chargeId = await _bankingService.CreateChargeAsync(Input);
-            StatusMessage = $"Charge {chargeId} logged.";
+            var ids = await _bankingService.CreateChargesAsync(
+                string.IsNullOrWhiteSpace(WithdrawalId) ? null : WithdrawalId,
+                Charge_Type, string.IsNullOrWhiteSpace(Notes) ? null : Notes.Trim(),
+                ticked.Select(l => (l.Payment_ID, l.Amount!.Value)).ToList());
 
-            // Redirect (PRG) rather than just re-rendering Page() here -
-            // Payments was already loaded at the top of this method,
-            // BEFORE the charge above took the just-charged payment off
-            // the eligible list, so rendering directly would still show
-            // it as chargeable. A fresh GET re-runs LoadDropdownsAsync
-            // and gets the real, current list - without this, the same
-            // payment could plausibly get charged twice.
-            return RedirectToPage();
+            TempData[SavedMessageKey] = ids.Count == 1
+                ? $"Charge {ids[0]} logged (Sh. {ticked[0].Amount:N2})."
+                : $"{ids.Count} charges logged ({ids[0]} to {ids[^1]}), Sh. {ticked.Sum(l => l.Amount!.Value):N2} in total.";
+            return RedirectToPage(new { withdrawal = WithdrawalId });
         }
         catch (SqlException ex)
         {
-            // Surfaces trg_PaymentCharges_ValidateWithdrawal's message
-            // directly - e.g. picking a withdrawal that never actually
-            // funded the selected payment.
             StatusIsError = true;
             StatusMessage = ex.Message;
+            KeepPostedLines();
+            return Page();
         }
-
-        return Page();
     }
 
-    private async Task LoadDropdownsAsync()
+    private async Task LoadAsync()
     {
-        Payments = await _bankingService.GetRecentPaymentsAsync();
-        Withdrawals = await _bankingService.GetAllWithdrawalsAsync();
+        Withdrawals = await _bankingService.GetWithdrawalsForChargesAsync();
+        Payments = (await _bankingService.GetChargeablePaymentsAsync(
+            string.IsNullOrWhiteSpace(WithdrawalId) ? null : WithdrawalId)).ToList();
     }
+
+    // After a refused save, show the ticks and fees as they were typed
+    // rather than resetting to the suggestions.
+    public Dictionary<string, ChargeLineInput> Posted { get; private set; } = new();
+    private void KeepPostedLines() =>
+        Posted = Lines.Where(l => !string.IsNullOrEmpty(l.Payment_ID))
+                      .GroupBy(l => l.Payment_ID).ToDictionary(g => g.Key, g => g.First());
 }

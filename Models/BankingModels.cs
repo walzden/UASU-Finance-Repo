@@ -157,3 +157,28 @@ public class AddAllocationInputModel
     [Range(0.01, double.MaxValue, ErrorMessage = "Amount must be greater than zero.")]
     public decimal Allocated_Amount { get; set; }
 }
+
+// An M-Pesa expense payment with no charge logged yet, for the tick list
+// on Payments/Charges.
+public class ChargeablePaymentRow
+{
+    public string Payment_ID { get; set; } = string.Empty;
+    public DateTime Payment_Date { get; set; }
+    public decimal Amount_Paid { get; set; }
+    public string? Reference_No { get; set; }
+    public string PayeeDisplay { get; set; } = string.Empty;
+    public int VoucherCount { get; set; }
+
+    // The fee most recently logged for a payment of exactly this amount -
+    // a starting point the Treasurer can change, not a tariff the app
+    // enforces. Null when no payment of this amount has a fee yet.
+    public decimal? SuggestedFee { get; set; }
+}
+
+// One row of the tick list as posted back.
+public class ChargeLineInput
+{
+    public string Payment_ID { get; set; } = string.Empty;
+    public bool Selected { get; set; }
+    public decimal? Amount { get; set; }
+}

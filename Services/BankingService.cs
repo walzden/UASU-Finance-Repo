@@ -19,6 +19,10 @@ public interface IBankingService
     Task<IEnumerable<SimpleOption>> GetRecentPaymentsAsync();
     Task<IEnumerable<SimpleOption>> GetPaymentsWithUnallocatedBalanceAsync();
     Task<string> CreateChargeAsync(PaymentChargeInputModel input);
+    Task<IEnumerable<ChargeablePaymentRow>> GetChargeablePaymentsAsync(string? withdrawalId);
+    Task<IEnumerable<SimpleOption>> GetWithdrawalsForChargesAsync();
+    Task<IReadOnlyList<string>> CreateChargesAsync(string? withdrawalId, string chargeType, string? notes,
+        IReadOnlyList<(string PaymentId, decimal Amount)> lines);
 
     Task<string> CreateAccountChargeAsync(AccountChargeInputModel input);
     Task<IEnumerable<AccountChargeRow>> GetAccountChargesAsync();
@@ -300,6 +304,121 @@ public class BankingService : IBankingService
             SELECT Charge_ID FROM @Inserted;";
 
         return await conn.ExecuteScalarAsync<string>(sql, input);
+    }
+
+    // Same "chargeable" rule as GetRecentPaymentsAsync: an M-Pesa payment
+    // for an Expense voucher with no charge logged yet.
+    private const string ChargeableWhere = @"
+        p.Payment_Mode = 'M-Pesa'
+        AND NOT EXISTS (SELECT 1 FROM PaymentCharges pc WHERE pc.Payment_ID = p.Payment_ID)
+        AND EXISTS (
+              SELECT 1 FROM PaymentAllocations pa
+              INNER JOIN Vouchers v ON v.Voucher_ID = pa.Voucher_ID
+              WHERE pa.Payment_ID = p.Payment_ID AND v.Transaction_Type = 'Expense')";
+
+    // Chargeable payments funded by one withdrawal - or, with no
+    // withdrawal, those not linked to any withdrawal (paid straight from
+    // the bank/M-Pesa account). Oldest first, like the M-Pesa statement.
+    public async Task<IEnumerable<ChargeablePaymentRow>> GetChargeablePaymentsAsync(string? withdrawalId)
+    {
+        using var conn = _db.CreateConnection();
+
+        var sql = $@"
+            SELECT p.Payment_ID, p.Payment_Date, p.Amount_Paid, p.Reference_No,
+                   ISNULL(payee.Name, 'Unknown') AS PayeeDisplay,
+                   ISNULL(payee.Vouchers, 0) AS VoucherCount,
+                   fee.Charge_Amount AS SuggestedFee
+            FROM Payments p
+            OUTER APPLY (
+                SELECT MIN(COALESCE(o.FullName, s.Business_Name, v.Manual_Payee_Name)) AS Name,
+                       COUNT(*) AS Vouchers
+                FROM PaymentAllocations pa
+                INNER JOIN Vouchers v ON v.Voucher_ID = pa.Voucher_ID
+                LEFT JOIN Ref_Officials o ON o.OfficialID = v.Official_Link
+                LEFT JOIN Ref_Suppliers s ON s.Supplier_ID = v.Supplier_Link
+                WHERE pa.Payment_ID = p.Payment_ID
+            ) payee
+            OUTER APPLY (
+                SELECT TOP 1 pc.Charge_Amount
+                FROM PaymentCharges pc
+                INNER JOIN Payments p2 ON p2.Payment_ID = pc.Payment_ID
+                WHERE pc.Charge_Type = 'M-PESA Fee' AND p2.Amount_Paid = p.Amount_Paid
+                ORDER BY p2.Payment_Date DESC, pc.Charge_ID DESC
+            ) fee
+            WHERE {ChargeableWhere}
+              AND (
+                    (@WithdrawalId IS NOT NULL AND EXISTS (SELECT 1 FROM WithdrawalPayments wp
+                                                           WHERE wp.Payment_ID = p.Payment_ID AND wp.Withdrawal_ID = @WithdrawalId))
+                 OR (@WithdrawalId IS NULL AND NOT EXISTS (SELECT 1 FROM WithdrawalPayments wp WHERE wp.Payment_ID = p.Payment_ID))
+              )
+            ORDER BY p.Payment_Date, p.Payment_ID;";
+
+        return await conn.QueryAsync<ChargeablePaymentRow>(sql, new { WithdrawalId = withdrawalId });
+    }
+
+    // Every withdrawal, newest first, labelled with how many of its
+    // payments still have no charge logged.
+    public async Task<IEnumerable<SimpleOption>> GetWithdrawalsForChargesAsync()
+    {
+        using var conn = _db.CreateConnection();
+
+        var sql = $@"
+            SELECT w.Withdrawal_ID AS Id,
+                   w.Withdrawal_ID + ' - ' + FORMAT(w.Withdrawal_Date,'yyyy-MM-dd')
+                   + ' - Sh.' + FORMAT(w.Amount,'N2')
+                   + ' - ' + CAST(ISNULL(c.n, 0) AS VARCHAR(10)) + ' to charge' AS Label
+            FROM BankWithdrawals w
+            OUTER APPLY (
+                SELECT COUNT(DISTINCT p.Payment_ID) AS n
+                FROM WithdrawalPayments wp
+                INNER JOIN Payments p ON p.Payment_ID = wp.Payment_ID
+                WHERE wp.Withdrawal_ID = w.Withdrawal_ID AND {ChargeableWhere}
+            ) c
+            ORDER BY w.Withdrawal_Date DESC;";
+
+        return await conn.QueryAsync<SimpleOption>(sql);
+    }
+
+    // One charge per ticked payment, all in one transaction: if the
+    // database refuses any of them (e.g. trg_PaymentCharges_
+    // ValidateWithdrawal - the withdrawal didn't fund that payment), none
+    // are saved.
+    public async Task<IReadOnlyList<string>> CreateChargesAsync(string? withdrawalId, string chargeType, string? notes,
+        IReadOnlyList<(string PaymentId, decimal Amount)> lines)
+    {
+        using var conn = (Microsoft.Data.SqlClient.SqlConnection)_db.CreateConnection();
+        conn.Open();
+        using var transaction = conn.BeginTransaction();
+
+        const string sql = @"
+            DECLARE @Inserted TABLE (Charge_ID NVARCHAR(40));
+            INSERT INTO PaymentCharges (Payment_ID, Withdrawal_ID, Charge_Type, Charge_Amount, Notes)
+            OUTPUT INSERTED.Charge_ID INTO @Inserted
+            VALUES (@PaymentId, @WithdrawalId, @ChargeType, @Amount, @Notes);
+            SELECT Charge_ID FROM @Inserted;";
+
+        try
+        {
+            var ids = new List<string>();
+            foreach (var line in lines)
+            {
+                ids.Add((await conn.ExecuteScalarAsync<string>(sql, new
+                {
+                    line.PaymentId,
+                    WithdrawalId = withdrawalId,
+                    ChargeType = chargeType,
+                    line.Amount,
+                    Notes = notes
+                }, transaction))!);
+            }
+            transaction.Commit();
+            return ids;
+        }
+        catch
+        {
+            transaction.Rollback();
+            throw;
+        }
     }
 
     // ------------------------------------------------------------------
