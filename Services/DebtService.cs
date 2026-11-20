@@ -6,7 +6,8 @@ namespace UASU_VoucherApprovals.Services;
 
 public interface IDebtService
 {
-    Task<string> CreateDebtAsync(DebtInputModel input);
+    Task<IReadOnlyList<string>> CreateDebtsAsync(IReadOnlyList<NewDebt> debts, DateTime dateIncurred,
+        DateTime? dateIncurredTo, string? invoiceNo, string description);
     Task<IEnumerable<DebtOption>> GetOutstandingDebtsAsync();
     Task<IEnumerable<DebtStatusRow>> GetDebtStatusReportAsync();
     Task<DebtDetail?> GetDebtDetailAsync(string debtId);
@@ -21,21 +22,54 @@ public class DebtService : IDebtService
         _db = db;
     }
 
-    public async Task<string> CreateDebtAsync(DebtInputModel input)
+    // One or more debts sharing a description, invoice and dates - a
+    // supplier debt, a personal debt to one official, or a common debt
+    // split across several officials (one row each, for their share). All
+    // in one transaction, so a group debt is never half-recorded.
+    public async Task<IReadOnlyList<string>> CreateDebtsAsync(IReadOnlyList<NewDebt> debts, DateTime dateIncurred,
+        DateTime? dateIncurredTo, string? invoiceNo, string description)
     {
-        using var conn = _db.CreateConnection();
+        using var conn = (Microsoft.Data.SqlClient.SqlConnection)_db.CreateConnection();
+        conn.Open();
+        using var transaction = conn.BeginTransaction();
 
-        // Debt_ID is server-generated (DEFAULT expression using
-        // DebtSeq), so OUTPUT INSERTED.Debt_ID hands the new number
-        // straight back rather than re-querying for it.
+        // Debt_ID is server-generated (DEFAULT expression using DebtSeq).
+        // OUTPUT goes INTO a table variable so this keeps working if
+        // Debt_Register ever gains an INSERT trigger.
         const string sql = @"
+            DECLARE @Inserted TABLE (Debt_ID NVARCHAR(20));
             INSERT INTO Debt_Register
-                (Creditor_Type, Official_link, Supplier_link, Date_Incurred, Invoice_No, [Description], Total_Owed)
-            OUTPUT INSERTED.Debt_ID
+                (Creditor_Type, Official_link, Supplier_link, Date_Incurred, Date_Incurred_To, Invoice_No, [Description], Total_Owed)
+            OUTPUT INSERTED.Debt_ID INTO @Inserted
             VALUES
-                (@Creditor_Type, @Official_link, @Supplier_link, @Date_Incurred, @Invoice_No, @Description, @Total_Owed);";
+                (@Creditor_Type, @Official_link, @Supplier_link, @DateIncurred, @DateIncurredTo, @InvoiceNo, @Description, @Total_Owed);
+            SELECT Debt_ID FROM @Inserted;";
 
-        return await conn.ExecuteScalarAsync<string>(sql, input);
+        try
+        {
+            var ids = new List<string>();
+            foreach (var d in debts)
+            {
+                ids.Add((await conn.ExecuteScalarAsync<string>(sql, new
+                {
+                    d.Creditor_Type,
+                    d.Official_link,
+                    d.Supplier_link,
+                    d.Total_Owed,
+                    DateIncurred = dateIncurred.Date,
+                    DateIncurredTo = dateIncurredTo?.Date,
+                    InvoiceNo = string.IsNullOrWhiteSpace(invoiceNo) ? null : invoiceNo.Trim(),
+                    Description = description.Trim()
+                }, transaction))!);
+            }
+            transaction.Commit();
+            return ids;
+        }
+        catch
+        {
+            transaction.Rollback();
+            throw;
+        }
     }
 
     public async Task<IEnumerable<DebtOption>> GetOutstandingDebtsAsync()
@@ -84,7 +118,7 @@ public class DebtService : IDebtService
     private const string DebtStatusSql = @"
         SELECT ds.Debt_ID, ds.Creditor_Type,
                COALESCE(o.FullName, s.Business_Name, 'Unknown') AS CreditorName,
-               ds.Date_Incurred, ds.Invoice_No, ds.[Description],
+               ds.Date_Incurred, ds.Date_Incurred_To, ds.Invoice_No, ds.[Description],
                ds.Total_Owed, ds.TotalAllocated, ds.Balance, ds.SettlementStatus,
                ISNULL(c.Committed, 0) AS Committed
         FROM DebtSummary ds

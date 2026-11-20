@@ -69,7 +69,7 @@ public class DebtsModel : PageModel
             filtered.Select(d => new object?[]
             {
                 d.SettlementStatus == "Settled" ? "Settled" : "Unpaid",
-                d.Debt_ID, d.CreditorName, d.Date_Incurred, d.Description,
+                d.Debt_ID, d.CreditorName, d.DateLabel, d.Description,
                 d.Total_Owed, d.TotalAllocated, d.Balance, d.AwaitingPayment, d.StillToRaise, d.SettlementStatus, d.AgingBucket
             }));
 

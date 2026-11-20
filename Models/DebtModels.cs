@@ -2,28 +2,47 @@ using System.ComponentModel.DataAnnotations;
 
 namespace UASU_VoucherApprovals.Models;
 
-// Mirrors CK_Debt_CreditorType: exactly one of Official_link/Supplier_link
-// must be set, matching Creditor_Type.
-public class DebtInputModel
+// New Debt: either one supplier, or one or more officials ticked from a
+// list. Ticking several records a common (group) debt - each official
+// still gets their own Debt_Register row for their share (CK_Debt_
+// CreditorType allows one creditor per debt), all sharing the
+// description, invoice and dates, created together.
+public class DebtEntryInputModel
 {
     [Required]
-    public string Creditor_Type { get; set; } = "Supplier"; // Official | Supplier
+    public string Creditor_Type { get; set; } = "Official"; // Official | Supplier
 
-    public string? Official_link { get; set; }
+    // Supplier debt.
     public string? Supplier_link { get; set; }
+    public decimal? Supplier_Amount { get; set; }
 
-    [Required]
+    // Official debt(s): one row per listed official.
+    public List<DebtOfficialLine> Officials { get; set; } = new();
+
+    [Required(ErrorMessage = "Enter the date (or first day) the debt was incurred.")]
     public DateTime Date_Incurred { get; set; } = DateTime.Today;
 
+    // Set only when the debt spans several days (SQL/038).
+    public bool Spans_Days { get; set; }
+    public DateTime? Date_Incurred_To { get; set; }
+
+    [MaxLength(50)]
     public string? Invoice_No { get; set; }
 
+    [Required(ErrorMessage = "Describe what the debt is for.")]
     [MaxLength(255)]
     public string? Description { get; set; }
-
-    [Required]
-    [Range(0.01, double.MaxValue, ErrorMessage = "Amount must be greater than zero.")]
-    public decimal Total_Owed { get; set; }
 }
+
+public class DebtOfficialLine
+{
+    public string OfficialID { get; set; } = string.Empty;
+    public bool Selected { get; set; }
+    public decimal? Amount { get; set; }
+}
+
+// One debt to create, after the page has checked the form.
+public record NewDebt(string Creditor_Type, string? Official_link, string? Supplier_link, decimal Total_Owed);
 
 // Same shape as SimpleOption, plus the debt's own Description - the
 // dropdown label already shows creditor/balance, but Vouchers/Create
@@ -66,6 +85,22 @@ public class DebtStatusRow
 
     // Not on any voucher yet - what New Voucher / Pay Debts can still raise.
     public decimal StillToRaise => Math.Max(0, Total_Owed - Committed);
+
+    // Last day when the debt spans several days (SQL/038); null for one day.
+    public DateTime? Date_Incurred_To { get; set; }
+
+    // "1 Oct 2026", or a range: "1–3 Oct 2026", "30 Sep – 2 Oct 2026",
+    // "30 Dec 2026 – 2 Jan 2027".
+    public string DateLabel => FormatDateRange(Date_Incurred, Date_Incurred_To);
+
+    public static string FormatDateRange(DateTime from, DateTime? to)
+    {
+        if (to is null || to.Value.Date == from.Date) return from.ToString("d MMM yyyy");
+        var t = to.Value;
+        if (from.Year != t.Year) return $"{from:d MMM yyyy} – {t:d MMM yyyy}";
+        if (from.Month != t.Month) return $"{from:d MMM} – {t:d MMM yyyy}";
+        return $"{from:%d}–{t:d MMM yyyy}";
+    }
 
     public int DaysOutstanding => (DateTime.Today - Date_Incurred).Days;
 

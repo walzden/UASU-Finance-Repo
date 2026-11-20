@@ -152,7 +152,7 @@ else
                                     <tr>
                                         <td class="text-nowrap"><a asp-page="/Debts/Details" asp-route-id="@d.Debt_ID">@d.Debt_ID</a></td>
                                         <td>@d.CreditorName</td>
-                                        <td>@d.Date_Incurred.ToString("yyyy-MM-dd")</td>
+                                        <td class="text-nowrap">@d.DateLabel</td>
                                         <td>@d.Description</td>
                                         <td class="text-end">@d.Total_Owed.ToString("N2")</td>
                                         <td class="text-end">@d.TotalAllocated.ToString("N2")</td>
@@ -213,7 +213,7 @@ else
                                     <tr>
                                         <td class="text-nowrap"><a asp-page="/Debts/Details" asp-route-id="@d.Debt_ID">@d.Debt_ID</a></td>
                                         <td>@d.CreditorName</td>
-                                        <td>@d.Date_Incurred.ToString("yyyy-MM-dd")</td>
+                                        <td class="text-nowrap">@d.DateLabel</td>
                                         <td>@d.Description</td>
                                         <td class="text-end">@d.Total_Owed.ToString("N2")</td>
                                         <td class="text-end">@d.TotalAllocated.ToString("N2")</td>
