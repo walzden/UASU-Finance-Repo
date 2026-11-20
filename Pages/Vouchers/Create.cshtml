@@ -123,7 +123,8 @@
                     }
                 </select>
                 <span asp-validation-for="Input.Debt_Link"></span>
-                <div class="form-text">Fills in the payee from the debt and makes this an Expense. Debts already on a voucher that hasn't been rejected or voided aren't listed.</div>
+                <div class="form-text">Fills in the payee from the debt and makes this an Expense. Debts already on a voucher that hasn't been rejected or voided aren't listed.
+                    Paying several debts? <a asp-page="/Debts/Pay">Pay Debts</a> raises their vouchers in one go.</div>
             </div>
             <div class="col-md-6">
                 <label asp-for="Input.Supersedes_Voucher_ID" class="form-label">Corrects a rejected voucher</label>
