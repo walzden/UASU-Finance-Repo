@@ -20,7 +20,7 @@ public interface IBankingService
     Task<IEnumerable<SimpleOption>> GetPaymentsWithUnallocatedBalanceAsync();
     Task<string> CreateChargeAsync(PaymentChargeInputModel input);
     Task<IEnumerable<ChargeablePaymentRow>> GetChargeablePaymentsAsync(string? withdrawalId);
-    Task<IEnumerable<SimpleOption>> GetWithdrawalsForChargesAsync();
+    Task<IEnumerable<SimpleOption>> GetWithdrawalsForChargesAsync(string? keepWithdrawalId = null);
     Task<IReadOnlyList<string>> CreateChargesAsync(string? withdrawalId, string chargeType, string? notes,
         IReadOnlyList<(string PaymentId, decimal Amount)> lines);
 
@@ -356,9 +356,10 @@ public class BankingService : IBankingService
         return await conn.QueryAsync<ChargeablePaymentRow>(sql, new { WithdrawalId = withdrawalId });
     }
 
-    // Every withdrawal, newest first, labelled with how many of its
-    // payments still have no charge logged.
-    public async Task<IEnumerable<SimpleOption>> GetWithdrawalsForChargesAsync()
+    // Withdrawals that still have payments with no charge logged, newest
+    // first, labelled with how many. keepWithdrawalId stays listed even at
+    // zero, so the one just finished doesn't vanish from the dropdown.
+    public async Task<IEnumerable<SimpleOption>> GetWithdrawalsForChargesAsync(string? keepWithdrawalId = null)
     {
         using var conn = _db.CreateConnection();
 
@@ -374,9 +375,10 @@ public class BankingService : IBankingService
                 INNER JOIN Payments p ON p.Payment_ID = wp.Payment_ID
                 WHERE wp.Withdrawal_ID = w.Withdrawal_ID AND {ChargeableWhere}
             ) c
+            WHERE ISNULL(c.n, 0) > 0 OR w.Withdrawal_ID = @KeepWithdrawalId
             ORDER BY w.Withdrawal_Date DESC;";
 
-        return await conn.QueryAsync<SimpleOption>(sql);
+        return await conn.QueryAsync<SimpleOption>(sql, new { KeepWithdrawalId = keepWithdrawalId });
     }
 
     // One charge per ticked payment, all in one transaction: if the

@@ -100,9 +100,9 @@ public class ChargesModel : PageModel
 
     private async Task LoadAsync()
     {
-        Withdrawals = await _bankingService.GetWithdrawalsForChargesAsync();
-        Payments = (await _bankingService.GetChargeablePaymentsAsync(
-            string.IsNullOrWhiteSpace(WithdrawalId) ? null : WithdrawalId)).ToList();
+        var withdrawalId = string.IsNullOrWhiteSpace(WithdrawalId) ? null : WithdrawalId;
+        Withdrawals = await _bankingService.GetWithdrawalsForChargesAsync(withdrawalId);
+        Payments = (await _bankingService.GetChargeablePaymentsAsync(withdrawalId)).ToList();
     }
 
     // After a refused save, show the ticks and fees as they were typed
