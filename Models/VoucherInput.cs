@@ -227,6 +227,10 @@ public class ApprovedUnpaidVoucherRow
     public string? Description { get; set; }
     public string PayeeDisplay { get; set; } = string.Empty;
     public bool Is_Legacy { get; set; }
+
+    // Already paid against this voucher by earlier part-payments.
+    public decimal PaidSoFar { get; set; }
+    public decimal Balance => Amount - PaidSoFar;
 }
 
 public class OfficialOption
@@ -238,13 +242,17 @@ public class OfficialOption
 
 public class PaymentInputModel
 {
-    // One or more approved, unpaid vouchers to settle, each in full (its
-    // own Amount). Vouchers for the same payee share one payment; each
-    // different payee gets its own. Amount_Paid below is just the total
-    // of the batch, shown on the form.
+    // One or more approved, unpaid vouchers to settle. Vouchers for the
+    // same payee share one payment; each different payee gets its own.
+    // Amount_Paid below is just the total of the batch, shown on the form.
     [Required]
     [MinLength(1, ErrorMessage = "Select at least one voucher.")]
     public List<string> Voucher_IDs { get; set; } = new();
+
+    // How much to pay now on each ticked voucher, keyed by Voucher_ID. A
+    // voucher missing here is paid its whole outstanding balance; less
+    // than that leaves it 'Partially Paid' and still payable for the rest.
+    public Dictionary<string, decimal?> Pay_Amounts { get; set; } = new();
 
     [Required]
     [Range(0.01, double.MaxValue, ErrorMessage = "Amount must be greater than zero.")]

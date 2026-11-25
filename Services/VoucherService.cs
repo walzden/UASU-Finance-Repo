@@ -597,11 +597,14 @@ public class VoucherService : IVoucherService
             SELECT
                 v.Voucher_ID, v.VoucherDate, v.Transaction_Type, v.Amount, v.[Description],
                 COALESCE(o.FullName, s.Business_Name, v.Manual_Payee_Name) AS PayeeDisplay,
-                v.Is_Legacy
+                v.Is_Legacy,
+                ISNULL(paid.PaidSoFar, 0) AS PaidSoFar
             FROM Vouchers v
             INNER JOIN VoucherPaymentEligible vpe ON vpe.Voucher_ID = v.Voucher_ID
             LEFT JOIN Ref_Officials o ON o.OfficialID = v.Official_Link
             LEFT JOIN Ref_Suppliers s ON s.Supplier_ID = v.Supplier_Link
+            OUTER APPLY (SELECT SUM(pa.Allocated_Amount) AS PaidSoFar
+                         FROM PaymentAllocations pa WHERE pa.Voucher_ID = v.Voucher_ID) paid
             WHERE v.Current_Status <> 'Paid'
             ORDER BY v.VoucherDate;";
 
@@ -653,14 +656,20 @@ public class VoucherService : IVoucherService
     {
         public string Voucher_ID { get; set; } = string.Empty;
         public decimal Amount { get; set; }
+        public decimal PaidSoFar { get; set; }
+        public decimal PayNow { get; set; }
         public string PayeeKey { get; set; } = string.Empty;
         public string? PayeeDisplay { get; set; }
     }
 
     // Settles one or more approved vouchers with ONE PAYMENT PER PAYEE:
     // ticked vouchers for the same payee share a single payment (one
-    // PaymentAllocations row per voucher, each for its full Amount,
-    // looked up here rather than trusted from the form); vouchers for
+    // PaymentAllocations row per voucher, for the amount entered against
+    // it, or if none its whole outstanding balance - worked out here from
+    // earlier allocations, not trusted from the form). Paying less than
+    // the balance is a part-payment: trg_PaymentStatusUpdate marks the
+    // voucher 'Partially Paid', it stays payable for the rest, and the
+    // trigger still refuses anything beyond its Amount. Vouchers for
     // different payees get separate payments. The mode, reference, bank
     // account, description and withdrawal on the form apply to every
     // payment. All of it runs in one SQL transaction: a voucher failing a
@@ -679,6 +688,8 @@ public class VoucherService : IVoucherService
             // for one-time payees - compared trimmed, case-insensitively).
             const string voucherSql = @"
                 SELECT v.Voucher_ID, v.Amount,
+                       ISNULL((SELECT SUM(pa.Allocated_Amount) FROM PaymentAllocations pa
+                               WHERE pa.Voucher_ID = v.Voucher_ID), 0) AS PaidSoFar,
                        ISNULL(v.Payee_Category, '') + '|' + COALESCE(v.Official_Link, v.Supplier_Link,
                            UPPER(LTRIM(RTRIM(v.Manual_Payee_Name))), '') AS PayeeKey,
                        COALESCE(o.FullName, s.Business_Name, v.Manual_Payee_Name) AS PayeeDisplay
@@ -693,6 +704,21 @@ public class VoucherService : IVoucherService
             var missing = input.Voucher_IDs.Where(id => !vouchers.ContainsKey(id)).ToList();
             if (missing.Count > 0)
                 throw new InvalidOperationException($"Voucher(s) not found: {string.Join(", ", missing)}.");
+
+            foreach (var v in vouchers.Values)
+            {
+                var balance = v.Amount - v.PaidSoFar;
+                if (balance <= 0)
+                    throw new InvalidOperationException($"Voucher {v.Voucher_ID} is already paid in full.");
+                v.PayNow = input.Pay_Amounts.TryGetValue(v.Voucher_ID, out var entered) && entered is { } e ? e : balance;
+                if (v.PayNow <= 0)
+                    throw new InvalidOperationException($"Enter an amount greater than zero to pay on voucher {v.Voucher_ID}.");
+                if (v.PayNow > balance)
+                    throw new InvalidOperationException(
+                        $"Voucher {v.Voucher_ID} only has Sh. {balance:N2} left to pay" +
+                        (v.PaidSoFar > 0 ? $" (Sh. {v.PaidSoFar:N2} of Sh. {v.Amount:N2} already paid)" : "") +
+                        $", so Sh. {v.PayNow:N2} can't be paid on it.");
+            }
 
             var paymentDate = await ValidatePaymentDateAsync(conn, transaction, input.Payment_Date, input.Withdrawal_Link);
 
@@ -721,7 +747,7 @@ public class VoucherService : IVoucherService
             foreach (var payeeGroup in input.Voucher_IDs.Distinct().Select(id => vouchers[id]).GroupBy(v => v.PayeeKey))
             {
                 var lines = payeeGroup.ToList();
-                var amount = lines.Sum(v => v.Amount);
+                var amount = lines.Sum(v => v.PayNow);
 
                 var paymentId = await conn.ExecuteScalarAsync<string>(insertPayment, new
                 {
@@ -735,7 +761,7 @@ public class VoucherService : IVoucherService
 
                 foreach (var v in lines)
                     await conn.ExecuteAsync(insertAllocation,
-                        new { PaymentId = paymentId, VoucherId = v.Voucher_ID, v.Amount }, transaction);
+                        new { PaymentId = paymentId, VoucherId = v.Voucher_ID, Amount = v.PayNow }, transaction);
 
                 if (!string.IsNullOrWhiteSpace(input.Withdrawal_Link))
                     await conn.ExecuteAsync(insertWithdrawalLink,
