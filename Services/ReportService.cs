@@ -318,8 +318,23 @@ public class ReportService : IReportService
 
                 UNION ALL
 
+                -- The bank's routine monthly fees (ledger fee, excise,
+                -- maintenance) go in as ONE 'Bank charges' line per month,
+                -- dated on the month's last such charge so month-end
+                -- balances (and Monthly Certification) are unchanged.
+                -- Anything typed 'Other' stays on a line of its own.
+                SELECT MAX(Charge_Date), 'Bank charges',
+                       CASE WHEN COUNT(*) = 1 THEN MAX(Charge_ID) ELSE CAST(COUNT(*) AS NVARCHAR(10)) + ' charges' END,
+                       0, 0, 0, SUM(Charge_Amount), 5
+                FROM AccountCharges
+                WHERE Charge_Type IN ('Account Ledger Fee', 'Excise Charges', 'Maintenance Fee')
+                GROUP BY YEAR(Charge_Date), MONTH(Charge_Date)
+
+                UNION ALL
+
                 SELECT Charge_Date, Charge_Type, Charge_ID, 0, 0, 0, Charge_Amount, 5
                 FROM AccountCharges
+                WHERE Charge_Type NOT IN ('Account Ledger Fee', 'Excise Charges', 'Maintenance Fee')
             ) x
             ORDER BY EntryDate, SourceOrder;";
 
